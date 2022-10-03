@@ -2,7 +2,6 @@ package log
 
 import (
 	cfg "project/config"
-	"time"
 
 	nested "github.com/antonfisher/nested-logrus-formatter"
 	log "github.com/sirupsen/logrus"
@@ -16,9 +15,10 @@ func LoggerInit(ctx *cfg.Context) {
 		ctx.Logger.SetLevel(log.InfoLevel)
 	}
 
-	// ctx.Logger.SetReportCaller(true)
-	ctx.Logger.SetFormatter(&nested.Formatter{
-		HideKeys:        true,
-		TimestampFormat: time.StampNano,
-	})
+	ctx.Logger.SetFormatter(
+		&nested.Formatter{
+			HideKeys:        true,
+			TimestampFormat: "2006-01-02 15:04:05",
+		})
+	ctx.Logger.SetReportCaller(true)
 }

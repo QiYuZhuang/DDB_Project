@@ -80,6 +80,9 @@ func NewCoordinator(ctx *cfg.Context) *Coordinator {
 
 func (c *Coordinator) connect_to_peers() {
 	l := c.context.Logger
+	// init message list
+	c.DispatchMessages = new(list.List)
+	c.InputMessages = new(list.List)
 	// create dispatcher sockets
 	l.Infoln("Start to create dispatcher sockets.")
 	CreateDispatcherSockets(c)

@@ -14,7 +14,7 @@ type Context struct {
 	Release           bool   `default:"false"` // performance test(release)
 	Debug             bool   `default:"false"` // correctness test(debug)
 	Fragment_strategy string `default:"none"`
-	Peer_file         string `default:"../config/cluster.ips"`
+	Peer_file         string `default:"/home/bigdata/Course3-DDB/DDB_Project/config/cluster.ips"`
 	Logger            *log.Logger
 	DB                *sql.DB
 }

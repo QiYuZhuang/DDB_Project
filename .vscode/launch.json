@@ -9,8 +9,9 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${fileDirname}",
-            "args": ["--debug", "true"],
+            "program": "/home/bigdata/Course3-DDB/DDB_Project/main/main.go",
+            "args": ["--debug=true", 
+                     "--host=10.77.110.146"],
         }
     ]
 }

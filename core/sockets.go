@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"time"
 )
 
 func ConnectionHandler(c *Coordinator, conn net.Conn) {
@@ -32,12 +33,27 @@ func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 	l := c.context.Logger
 	port := "10800"
 	address := fmt.Sprintf("%s:%s", c.peers[peer_idx].ip, port)
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		l.Error("client dial failed.", err)
-		return
+	maxRetry := 25
+	cntRetry := 1
+	var conn net.Conn
+	var err error
+	// retry
+	for {
+		conn, err = net.Dial("tcp", address)
+		if err == nil {
+			break
+		} else {
+			cntRetry++
+			l.Warn(address, ", client dial failed. Retry times ", cntRetry, err)
+		}
+		if cntRetry > maxRetry && err != nil {
+			l.Error(address, ", client dial failed.", err)
+			return
+		}
+		time.Sleep(1 * time.Second)
 	}
 	defer conn.Close()
+	l.Debug(address, ", client connect")
 
 	for {
 		if c.DispatchMessages.Len() != 0 {
