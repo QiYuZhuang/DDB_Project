@@ -1,0 +1,30 @@
+{
+    "tables":[
+        {
+            "table_name": "book", 
+            "columns": [
+                {
+                    "col_name": "id",
+                    "type": "int"
+                },
+                {
+                    "col_name": "name",
+                    "type": "string"
+                }
+            ]
+        }, 
+        {
+            "table_name": "consumer", 
+            "columns": [
+                {
+                    "col_name": "id",
+                    "type": "int"
+                },
+                {
+                    "col_name": "name",
+                    "type": "string"
+                }
+            ]
+        }
+    ]
+}
