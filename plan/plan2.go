@@ -1,4 +1,4 @@
-package plan_test
+package plan
 
 import (
 	"encoding/json"
@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	plan "project/plan"
 
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/ast"
@@ -207,16 +205,16 @@ func GenInsertSQL(insert_requests []InsertRequest) ([]SqlRouter, error) {
 		}
 		cur_sql := "insert into " + insert_req.Siteinfo.Name + "(" + table_cols + ") values " + "(" + table_vals + ");"
 		var cur_insert SqlRouter
-		cur_insert.site_ip = insert_req.Siteinfo.IP
-		cur_insert.sql = cur_sql
+		cur_insert.Site_ip = insert_req.Siteinfo.IP
+		cur_insert.Sql = cur_sql
 		ret = append(ret, cur_insert)
 	}
 	return ret, err
 }
 
 type SqlRouter struct {
-	sql     string
-	site_ip string
+	Sql     string
+	Site_ip string
 }
 
 func HandleInsert(ctx Context, stmt ast.StmtNode) ([]SqlRouter, error) {
@@ -269,12 +267,12 @@ func HandleDelete(ctx Context, stmt ast.StmtNode) ([]SqlRouter, error) {
 		return ret, err
 	}
 	if table_meta.FragType == "horizontal" {
-		for frag_index, _ := range partition_meta.HFragInfos {
+		for frag_index := range partition_meta.HFragInfos {
 			site_name_ := partition_meta.SiteInfos[frag_index].Name
 			var sql_router_ SqlRouter
-			sql_router_.site_ip = partition_meta.SiteInfos[frag_index].IP
-			sql_router_.sql = sql
-			sql_router_.sql = strings.Replace(sql_router_.sql, table_meta.TableName, site_name_, 1)
+			sql_router_.Site_ip = partition_meta.SiteInfos[frag_index].IP
+			sql_router_.Sql = sql
+			sql_router_.Sql = strings.Replace(sql_router_.Sql, table_meta.TableName, site_name_, 1)
 		}
 	} else {
 		// vertical fragment
@@ -293,7 +291,7 @@ type Context struct {
 	partitions  Partitions
 }
 
-func HandleSelect(ctx Context, sel *ast.SelectStmt) (p plan.BasePlan, err error) {
+func HandleSelect(ctx Context, sel *ast.SelectStmt) (p BasePlan, err error) {
 	// generate Logical Plan tree
 	//            	   Proj.
 	//                  |
@@ -336,9 +334,9 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p plan.BasePlan, err error)
 }
 
 // buildProjection returns a Projection plan and non-aux columns length.
-func buildProjection(ctx Context, p plan.BasePlan, fields []*ast.SelectField) (plan.BasePlan, error) {
-	proj := plan.PlanTreeNode{
-		Type: plan.ProjectionType,
+func buildProjection(ctx Context, p BasePlan, fields []*ast.SelectField) (BasePlan, error) {
+	proj := PlanTreeNode{
+		Type: ProjectionType,
 	}.Init()
 	for _, field := range fields {
 		proj.ColsName = append(proj.ColsName, field.Expr.(*ast.ColumnNameExpr).Name.String())
@@ -369,12 +367,12 @@ func splitWhere(where ast.ExprNode) []ast.ExprNode {
 	return conditions
 }
 
-func buildSelection(ctx Context, p plan.BasePlan, where ast.ExprNode) (plan.BasePlan, error) {
+func buildSelection(ctx Context, p BasePlan, where ast.ExprNode) (BasePlan, error) {
 
 	conditions := splitWhere(where)
 	// expressions := make([]expression.Expression, 0, len(conditions))
-	selection := plan.PlanTreeNode{
-		Type: plan.SelectType,
+	selection := PlanTreeNode{
+		Type: SelectType,
 	}.Init()
 
 	selection.Conditions = conditions
@@ -382,7 +380,7 @@ func buildSelection(ctx Context, p plan.BasePlan, where ast.ExprNode) (plan.Base
 	return selection, nil
 }
 
-func buildJoin(ctx Context, joinNode *ast.Join) (plan.BasePlan, error) {
+func buildJoin(ctx Context, joinNode *ast.Join) (BasePlan, error) {
 	if joinNode.Right == nil {
 		return buildResultSetNode(ctx, joinNode.Left)
 	}
@@ -397,7 +395,7 @@ func buildJoin(ctx Context, joinNode *ast.Join) (plan.BasePlan, error) {
 		return nil, err
 	}
 
-	joinPlan := plan.PlanTreeNode{Type: plan.JoinType}.Init()
+	joinPlan := PlanTreeNode{Type: JoinType}.Init()
 	joinPlan.SetChildren(leftPlan, rightPlan)
 	// TODO set schema and join node name
 	// joinPlan.SetSchema(expression.MergeSchema(leftPlan.Schema(), rightPlan.Schema()))
@@ -407,7 +405,7 @@ func buildJoin(ctx Context, joinNode *ast.Join) (plan.BasePlan, error) {
 	return joinPlan, nil
 }
 
-func buildDataSource(ctx Context, tn *ast.TableName) (plan.BasePlan, error) {
+func buildDataSource(ctx Context, tn *ast.TableName) (BasePlan, error) {
 	// dbName := tn.Schema
 	// TODO check table in this db
 	// tbl, err := b.is.TableByName(dbName, tn.Name)
@@ -415,15 +413,15 @@ func buildDataSource(ctx Context, tn *ast.TableName) (plan.BasePlan, error) {
 	// 	return nil, err
 	// }
 
-	result := plan.PlanTreeNode{
-		Type:          plan.DataSourceType,
+	result := PlanTreeNode{
+		Type:          DataSourceType,
 		FromTableName: tn.Name.String(),
 	}.Init()
 
 	return result, nil
 }
 
-func buildResultSetNode(ctx Context, node ast.ResultSetNode) (p plan.BasePlan, err error) {
+func buildResultSetNode(ctx Context, node ast.ResultSetNode) (p BasePlan, err error) {
 	switch x := node.(type) {
 	case *ast.Join:
 		return buildJoin(ctx, x)

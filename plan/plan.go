@@ -38,6 +38,11 @@ type PlanTreeNode struct {
 	ColsName []string
 }
 
+// type SqlRouter struct {
+// 	sql     string
+// 	site_ip string
+// }
+
 func (p PlanTreeNode) Init() *PlanTreeNode {
 	return &p
 }

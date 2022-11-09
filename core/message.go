@@ -4,6 +4,7 @@ import (
 	"time"
 
 	cfg "project/config"
+	p "project/plan"
 )
 
 type MessageType uint32
@@ -23,17 +24,17 @@ const (
 type Message struct {
 	Type    MessageType   `json:"type"`
 	Length  uint32        `json:"length"`
-	Src     int16         `json:"src_machine_id"`
-	Dst     int16         `json:"dest_machine_id"`
-	TxnId   uint32        `json:"txh_id"`
+	Src     string        `json:"src_machine_id"`
+	Dst     string        `json:"dest_machine_id"`
+	TxnId   uint32        `json:"txn_id"`
 	QueryId uint16        `json:"query_id"`
 	Query   string        `json:"query"`
 	Result  interface{}   `json:"result"`
 	Time    time.Duration `json:"time"`
 }
 
-func NewMessage(t MessageType, src int16, dst int16, txn_id uint32) Message {
-	return Message{
+func NewMessage(t MessageType, src string, dst string, txn_id uint32) *Message {
+	return &Message{
 		Type:  t,
 		Src:   src,
 		Dst:   dst,
@@ -93,20 +94,10 @@ func (m *Message) SetResult() {
 
 }
 
-/*	struct Message
-	| data | -> | message_length | message_type | src_thread_id | dest_thread_id |
-*/
-// func (m *Message) ResizeData(size int32) {
-// 	m.data = make([]byte, size)
-// }
-
-// func (m *Message) GetMessageLength() int32 {
-// 	return int32(binary.LittleEndian.Uint32(m.data[0:4]))
-// }
-
-// func (m *Message) SetMessageLength(length int32) {
-// 	m.data[0] = uint8(length)
-// 	m.data[1] = uint8(length >> 8)
-// 	m.data[2] = uint8(length >> 16)
-// 	m.data[3] = uint8(length >> 24)
-// }
+func (c *Coordinator) NewQueryRequestMessage(router p.SqlRouter) *Message {
+	// router
+	message := NewMessage(QueryRequest, c.context.DB_host, router.Site_ip, 0)
+	message.SetQuery(router.Sql)
+	message.SetMessageLength(0)
+	return message
+}

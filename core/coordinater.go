@@ -9,17 +9,23 @@ import (
 	"os"
 	cfg "project/config"
 	"strings"
+	"sync"
 	"time"
 )
 
+const MaxPeerNum = 10
+
 type Coordinator struct {
 	id                int16
-	peers             []Peer
-	InputSockets      []net.Conn
-	DispatcherSockets []net.Conn
-	InputMessages     *list.List
-	DispatchMessages  *list.List
+	peers             [MaxPeerNum]Peer
+	InputSockets      [MaxPeerNum]net.Conn
+	DispatcherSockets [MaxPeerNum]net.Conn
+	InputMessages     [MaxPeerNum]list.List
+	DispatchMessages  [MaxPeerNum]list.List
 	context           *cfg.Context
+
+	d_mutex sync.Mutex
+	// i_mutex sync.Mutex
 }
 
 type Peer struct {
@@ -31,7 +37,7 @@ type Peer struct {
 func (c *Coordinator) find_peers(filename string) {
 	l := c.context.Logger
 	str, _ := os.Getwd()
-	l.Debugln("temp path is", str)
+	l.Infoln("temp path is", str)
 	file, err := os.OpenFile(c.context.Peer_file, os.O_RDWR, 0666)
 	if err != nil {
 		l.Fatalln("Open file error!", err)
@@ -64,7 +70,7 @@ func (c *Coordinator) find_peers(filename string) {
 				ip:   arr[0],
 				port: arr[1],
 			}
-			c.peers = append(c.peers, p)
+			c.peers[machine_id] = p
 		}
 		machine_id++
 	}
@@ -81,8 +87,8 @@ func NewCoordinator(ctx *cfg.Context) *Coordinator {
 func (c *Coordinator) connect_to_peers() {
 	l := c.context.Logger
 	// init message list
-	c.DispatchMessages = new(list.List)
-	c.InputMessages = new(list.List)
+	// c.DispatchMessages = new([]list.List)
+	// c.InputMessages = new([]list.List)
 	// create dispatcher sockets
 	l.Infoln("Start to create dispatcher sockets.")
 	CreateDispatcherSockets(c)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"reflect"
 	"time"
 )
 
@@ -53,26 +54,37 @@ func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 		time.Sleep(1 * time.Second)
 	}
 	defer conn.Close()
+	c.DispatcherSockets[peer_idx] = conn
 	l.Debug(address, ", client connect")
 
 	for {
-		if c.DispatchMessages.Len() != 0 {
-			m := c.DispatchMessages.Front()
-			if data, err := json.Marshal(m); err == nil {
-				_, err = conn.Write(data)
-				if err != nil {
-					l.Errorln("when write conn, conn closed.", err.Error())
-				}
-			} else {
-				l.Errorln("json marshal failed, ", err.Error())
+		c.d_mutex.Lock()
+		for _, p := range c.peers {
+			if p.id == c.id {
+				continue
 			}
+			for c.DispatchMessages[p.id].Len() != 0 {
+				m := c.DispatchMessages[p.id].Front()
+				if reflect.TypeOf(m).Name() != "Message" {
+					l.Errorln("when dispatch, message type error")
+				}
+				if data, err := json.Marshal(m); err == nil {
+					_, err = conn.Write(data)
+					if err != nil {
+						l.Errorln("when write conn, conn closed.", err.Error())
+					}
+				} else {
+					l.Errorln("json marshal failed, ", err.Error())
+				}
 
-			c.DispatchMessages.Remove(m)
+				c.DispatchMessages[p.id].Remove(m)
+			}
 		}
+		c.d_mutex.Unlock()
 	}
 }
 
-func CreateInputSockets(c *Coordinator) {
+func CreateDispatcherSockets(c *Coordinator) {
 	for i := 0; i < len(c.peers); i++ {
 		if c.peers[i].id != c.id {
 			go ClientConnectionHandler(c, i)
@@ -80,7 +92,7 @@ func CreateInputSockets(c *Coordinator) {
 	}
 }
 
-func CreateDispatcherSockets(c *Coordinator) {
+func CreateInputSockets(c *Coordinator) {
 	l := c.context.Logger
 	port := "10800"
 	address := fmt.Sprintf("%s:%s", c.context.DB_host, port)
@@ -95,8 +107,31 @@ func CreateDispatcherSockets(c *Coordinator) {
 			if err != nil {
 				l.Error("socket accept failed.", err.Error())
 			}
-			c.DispatcherSockets = append(c.DispatcherSockets, new_conn)
+			var idx int
+			for i, p := range c.peers {
+				if p.ip == new_conn.RemoteAddr().String() {
+					idx = i
+					break
+				}
+			}
+
+			c.DispatcherSockets[idx] = new_conn
 			go ConnectionHandler(c, new_conn)
 		}
 	}(&listener)
+}
+
+func FlushMessage(c *Coordinator, m *Message) {
+	c.d_mutex.Lock()
+	defer c.d_mutex.Unlock()
+
+	var idx int
+	for _, p := range c.peers {
+		if p.ip == m.Dst {
+			idx = int(p.id)
+			break
+		}
+	}
+
+	c.DispatchMessages[idx].PushBack(*m)
 }
