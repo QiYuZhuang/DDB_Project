@@ -1,33 +1,35 @@
 {
     "tables":[
         {
-            "table_name": "publisher", 
-            "fragmentation_type": "horizontal", 
+            "table_name": "PUBLISHER", 
             "columns": [
                 {
-                    "col_name": "id",
+                    "col_name": "ID",
                     "type": "int"
                 },
                 {
-                    "col_name": "name",
+                    "col_name": "NAME",
+                    "type": "string"
+                },
+                {
+                    "col_name": "NATION",
                     "type": "string"
                 }
             ]
         }, 
         {
-            "table_name": "customer", 
-            "fragmentation_type": "vertical",
+            "table_name": "CUSTOMER", 
             "columns": [
                 {
-                    "col_name": "id",
+                    "col_name": "ID",
                     "type": "int"
                 },
                 {
-                    "col_name": "name",
+                    "col_name": "NAME",
                     "type": "string"
                 },
                 {
-                    "col_name": "rank",
+                    "col_name": "RANK_",
                     "type": "int"
                 }
             ]

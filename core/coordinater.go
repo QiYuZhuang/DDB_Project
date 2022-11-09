@@ -13,8 +13,8 @@ import (
 )
 
 type Coordinator struct {
-	id                int16
-	peers             []Peer
+	Id                int16
+	Peers             []Peer
 	InputSockets      []net.Conn
 	DispatcherSockets []net.Conn
 	InputMessages     *list.List
@@ -23,12 +23,12 @@ type Coordinator struct {
 }
 
 type Peer struct {
-	id   int16
-	ip   string
+	Id   int16
+	Ip   string
 	port string
 }
 
-func (c *Coordinator) find_peers(filename string) {
+func (c *Coordinator) FindPeers(filename string) {
 	l := c.context.Logger
 	str, _ := os.Getwd()
 	l.Debugln("temp path is", str)
@@ -57,14 +57,14 @@ func (c *Coordinator) find_peers(filename string) {
 			l.Debugln(line)
 			arr := strings.Fields(line)
 			if arr[0] == c.context.DB_host {
-				c.id = machine_id
+				c.Id = machine_id
 			}
 			p := Peer{
-				id:   machine_id,
-				ip:   arr[0],
+				Id:   machine_id,
+				Ip:   arr[0],
 				port: arr[1],
 			}
-			c.peers = append(c.peers, p)
+			c.Peers = append(c.Peers, p)
 		}
 		machine_id++
 	}
@@ -73,7 +73,7 @@ func (c *Coordinator) find_peers(filename string) {
 func NewCoordinator(ctx *cfg.Context) *Coordinator {
 	c := Coordinator{}
 	c.context = ctx
-	c.find_peers(ctx.Peer_file)
+	c.FindPeers(ctx.Peer_file)
 
 	return &c
 }
@@ -107,6 +107,14 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 		}
 		l.Debugln("sql:", n)
 		panic("handle sql, not implement now")
+		// parser_tree := parser(buf)
+
+		//
+		// plan-tree
+
+		//result = plan_tree_root->execute(c, )
+		// ---- insert -> ip / sql
+		// ---- select -> execute_tree
 	}
 }
 

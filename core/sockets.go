@@ -32,7 +32,7 @@ func ConnectionHandler(c *Coordinator, conn net.Conn) {
 func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 	l := c.context.Logger
 	port := "10800"
-	address := fmt.Sprintf("%s:%s", c.peers[peer_idx].ip, port)
+	address := fmt.Sprintf("%s:%s", c.Peers[peer_idx].Ip, port)
 	maxRetry := 25
 	cntRetry := 1
 	var conn net.Conn
@@ -73,8 +73,8 @@ func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 }
 
 func CreateInputSockets(c *Coordinator) {
-	for i := 0; i < len(c.peers); i++ {
-		if c.peers[i].id != c.id {
+	for i := 0; i < len(c.Peers); i++ {
+		if c.Peers[i].Id != c.Id {
 			go ClientConnectionHandler(c, i)
 		}
 	}
