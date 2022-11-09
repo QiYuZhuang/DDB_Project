@@ -3,48 +3,61 @@
     "patitions": [
         {
             "table_name": "publisher",
-            "site_ip": [
-                "10.77.110.145",
-                "10.77.110.146"
+            "site_info": [
+                {
+                    "frag_name": "Publisher.1",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "Publisher.2",
+                    "ip": "10.77.110.146"
+                }
             ], 
-            "condition": [
+            "fragmentation_type": "horizontal", 
+            "horizontal_fragmentation": [
                 {
                     "key": "id",
                     "range": [
                         {
+                            "frag_name": "Publisher.1",
                             "gt": "0", 
                             "lt": "104000"
                         },
                         {
+                            "frag_name": "Publisher.2",
                             "gt" : "104000",
                             "lt" : "999999"
                         }
                     ]
                 }
-
-            ]
+            ],
+            "vertical_fragmentation":[]
         },
-        {
-            "table_name": "book",
-            "site_ip": [
-                "10.77.110.145",
-                "10.77.110.146"
-            ], 
-            "condition": [
-                {
-                    "key": "id",
-                    "range": [
-                        {
-                            "gt": "0", 
-                            "lt": "104000"
-                        },
-                        {
-                            "gt" : "104000",
-                            "lt" : "999999"
-                        }
-                    ]
-                }
 
+        {
+            "table_name": "customer",
+
+            "site_info": [
+                {
+                    "frag_name": "Customer.1",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "Customer.2",
+                    "ip": "10.77.110.146"
+                }
+            ], 
+            "fragmentation_type": "vertical", 
+            "horizontal_fragmentation": [],
+            "vertical_fragmentation":[
+                {
+                    "frag_name": "Customer.1",
+                    "col_names": ["id", "name"]
+                },
+                {
+                    "frag_name": "Customer.2",
+                    "col_names": ["id", "rank"]
+                }
             ]
         }
     ]

@@ -14,6 +14,7 @@ import (
 
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/ast"
+	"github.com/pingcap/tidb/parser/opcode"
 	_ "github.com/pingcap/tidb/parser/test_driver"
 )
 
@@ -24,16 +25,29 @@ type Partitions struct {
 }
 type Partition struct {
 	TableName  string      `json:"table_name"`
-	SiteIP     []string    `json:"site_ip"`
-	Conditions []Condition `json:"condition"`
+	SiteInfos  []SiteInfo  `json:"site_info"`
+	HFragInfos []HFragInfo `json:"horizontal_fragmentation"`
+	VFragInfos []VFragInfo `json:"vertical_fragmentation"`
 }
-type Condition struct {
+
+type SiteInfo struct {
+	Name string `json:"frag_name"`
+	IP   string `json:"ip"`
+}
+type HFragInfo struct {
 	Key    string           `json:"key"`
 	Ranges []ConditionRange `json:"range"`
 }
+
 type ConditionRange struct {
+	SiteName    string `json:"frag_name"`
 	GreaterThan string `json:"gt"`
 	LessThan    string `json:"lt"`
+}
+
+type VFragInfo struct {
+	SiteName   string   `json:"frag_name"`
+	ColumnName []string `json:"col_names"`
 }
 
 /************************************************************/
@@ -45,6 +59,7 @@ type TableMetas struct {
 }
 type TableMeta struct {
 	TableName string   `json:"table_name"`
+	FragType  string   `json:"fragmentation_type"`
 	Columns   []Column `json:"columns"`
 }
 type Column struct {
@@ -55,8 +70,13 @@ type Column struct {
 /************************************************************/
 
 type InsertRequest struct {
-	SQL    string
-	SiteIP string
+	Siteinfo     SiteInfo
+	InsertValues []InsertValue
+}
+
+type InsertValue struct {
+	ColName string
+	Val     string
 }
 
 func GetMidStr(s string, sep1 string, sep2 string) string {
@@ -67,32 +87,23 @@ func GetMidStr(s string, sep1 string, sep2 string) string {
 	return s
 }
 
-func HandleInsert(ctx Context, stmt ast.StmtNode) InsertRequest {
-	// router the insert sql to partitioned site
-	// Horizontal fragmentation only
-	// only consider one fragmentation condition
-
-	var ret InsertRequest
-
-	sel := stmt.(*ast.InsertStmt)
-	fmt.Println(sel)
-	sql := sel.Text()
-	fmt.Println(sql)
-	ret.SQL = sql
-
-	tablename := sel.Table.TableRefs.Left.(*ast.TableSource).Source.(*ast.TableName).Name.String()
-	values := strings.Split(GetMidStr(sel.Text(), "(", ")"), ",")
-
+func FindMetaInfo(ctx Context, tablename string) (TableMeta, Partition, error) {
 	var table_meta TableMeta
 	var partition_meta Partition
+	var err error
 	// find metaData
+	is_find_ := false
 	for _, element := range ctx.table_metas.TableMetas {
 		if element.TableName == tablename {
 			table_meta = element
+			is_find_ = true
 			break
 		}
 	}
-
+	if is_find_ == false {
+		err = errors.New("fail to find " + tablename + " in current database")
+		return table_meta, partition_meta, err
+	}
 	// find PartitionMetaData
 	for _, element := range ctx.partitions.Partitions {
 		if element.TableName == tablename {
@@ -100,39 +111,181 @@ func HandleInsert(ctx Context, stmt ast.StmtNode) InsertRequest {
 			break
 		}
 	}
+	if is_find_ == false {
+		err = errors.New("fail to find partition info about " + tablename + " in current database")
+		return table_meta, partition_meta, err
+	}
 
-	// check current value is in Partition or not
-	for col_index_, col_ := range table_meta.Columns {
-		val_ := values[col_index_]
-		for _, cond_ := range partition_meta.Conditions {
-			if cond_.Key == col_.ColumnName {
-				// range
-				for range_index_, range_ := range cond_.Ranges {
-					if col_.Type == "string" {
-						if range_.GreaterThan <= val_ &&
-							val_ <= range_.LessThan {
-							//! TODO: multipule partition condition on one table
-							ret.SiteIP = partition_meta.SiteIP[range_index_]
-						}
-					} else if col_.Type == "int" {
-						gt, _ := strconv.Atoi(range_.GreaterThan)
-						lt, _ := strconv.Atoi(range_.LessThan)
-						val, _ := strconv.Atoi(val_)
+	return table_meta, partition_meta, err
+}
 
-						if gt <= val &&
-							val <= lt {
-							//! TODO: multipule partition condition on one table
-							ret.SiteIP = partition_meta.SiteIP[range_index_]
+func GenInsertRequest(table_meta TableMeta, partition_meta Partition, values []string) ([]InsertRequest, error) {
+	//
+	var returns []InsertRequest
+	var err error
+
+	if table_meta.FragType == "horizontal" {
+		var ret InsertRequest
+		for col_index_, col_ := range table_meta.Columns {
+			val_ := values[col_index_]
+
+			//
+			var insert_val InsertValue
+			insert_val.ColName = col_.ColumnName
+			insert_val.Val = val_
+			ret.InsertValues = append(ret.InsertValues, insert_val)
+
+			for _, cond_ := range partition_meta.HFragInfos {
+				if cond_.Key == col_.ColumnName {
+					// range
+					for range_index_, range_ := range cond_.Ranges {
+						if col_.Type == "string" {
+							if range_.GreaterThan <= val_ &&
+								val_ <= range_.LessThan {
+								//! TODO: multipule partition condition on one table
+								ret.Siteinfo = partition_meta.SiteInfos[range_index_]
+
+							}
+						} else if col_.Type == "int" {
+							gt, _ := strconv.Atoi(range_.GreaterThan)
+							lt, _ := strconv.Atoi(range_.LessThan)
+							val, _ := strconv.Atoi(val_)
+
+							if gt <= val &&
+								val <= lt {
+								//! TODO: multipule partition condition on one table
+								ret.Siteinfo = partition_meta.SiteInfos[range_index_]
+							}
 						}
 					}
-
 				}
 			}
+
 		}
+		returns = append(returns, ret)
+	} else if table_meta.FragType == "vertical" {
+		for frag_index, fag_ := range partition_meta.VFragInfos {
+			var ret InsertRequest
+			ret.Siteinfo = partition_meta.SiteInfos[frag_index]
+
+			for _, col_name := range fag_.ColumnName {
+				// per site
+				var insert_val InsertValue
+
+				for col_index_, col_ := range table_meta.Columns {
+					if col_.ColumnName == col_name {
+						val_ := values[col_index_]
+						insert_val.ColName = col_name
+						insert_val.Val = val_
+					}
+				}
+				ret.InsertValues = append(ret.InsertValues, insert_val)
+			}
+			returns = append(returns, ret)
+		}
+	} else {
+		err = errors.New("todo none frag table")
+	}
+	return returns, err
+}
+
+func GenInsertSQL(insert_requests []InsertRequest) ([]SqlRouter, error) {
+	var err error
+	var ret []SqlRouter
+
+	for _, insert_req := range insert_requests {
+		// insert into ...(col1, col2) values();
+		var table_cols string
+		var table_vals string
+		for _, col_ := range insert_req.InsertValues {
+			if len(table_cols) > 0 {
+				table_cols += ", "
+				table_vals += ", "
+			}
+			table_cols += col_.ColName
+			table_vals += col_.Val
+		}
+		cur_sql := "insert into " + insert_req.Siteinfo.Name + "(" + table_cols + ") values " + "(" + table_vals + ");"
+		var cur_insert SqlRouter
+		cur_insert.site_ip = insert_req.Siteinfo.IP
+		cur_insert.sql = cur_sql
+		ret = append(ret, cur_insert)
+	}
+	return ret, err
+}
+
+type SqlRouter struct {
+	sql     string
+	site_ip string
+}
+
+func HandleInsert(ctx Context, stmt ast.StmtNode) ([]SqlRouter, error) {
+	// router the insert sql to partitioned site
+	// Horizontal fragmentation only
+	// only consider one fragmentation condition
+	var ret []SqlRouter
+	sel := stmt.(*ast.InsertStmt)
+	fmt.Println(sel)
+	sql := sel.Text()
+	fmt.Println(sql)
+	// ret.SQL = sql
+
+	tablename := sel.Table.TableRefs.Left.(*ast.TableSource).Source.(*ast.TableName).Name.String()
+	values := strings.Split(GetMidStr(sel.Text(), "(", ")"), ",")
+
+	// find meta
+	table_meta, partition_meta, err := FindMetaInfo(ctx, tablename)
+	if err != nil {
+		return ret, err
+	}
+
+	// check current value is in Partition or not
+	insert_requests, err := GenInsertRequest(table_meta, partition_meta, values)
+	if err != nil {
+		return ret, err
+	}
+	// generate sql with router ip
+	ret, err = GenInsertSQL(insert_requests)
+	fmt.Println(tablename)
+	return ret, err
+}
+
+func HandleDelete(ctx Context, stmt ast.StmtNode) ([]SqlRouter, error) {
+	// router the delete sql to partitioned site
+	// Horizontal fragmentation only
+	// only consider one fragmentation condition
+	var ret []SqlRouter
+	sel := stmt.(*ast.DeleteStmt)
+	fmt.Println(sel)
+	sql := sel.Text()
+	fmt.Println(sql)
+	// ret.SQL = sql
+
+	tablename := sel.Tables.Tables[0].Name.String()
+
+	// find meta
+	table_meta, partition_meta, err := FindMetaInfo(ctx, tablename)
+	if err != nil {
+		return ret, err
+	}
+	if table_meta.FragType == "horizontal" {
+		for frag_index, _ := range partition_meta.HFragInfos {
+			site_name_ := partition_meta.SiteInfos[frag_index].Name
+			var sql_router_ SqlRouter
+			sql_router_.site_ip = partition_meta.SiteInfos[frag_index].IP
+			sql_router_.sql = sql
+			sql_router_.sql = strings.Replace(sql_router_.sql, table_meta.TableName, site_name_, 1)
+		}
+	} else {
+		// vertical fragment
+		// ask certain table for primary key
+		// and broadcast delete to all frags
+		err = errors.New("todo not implemented vertical delete")
+		//
 	}
 
 	fmt.Println(tablename)
-	return ret
+	return ret, err
 }
 
 type Context struct {
@@ -141,6 +294,17 @@ type Context struct {
 }
 
 func HandleSelect(ctx Context, sel *ast.SelectStmt) (p plan.BasePlan, err error) {
+	// generate Logical Plan tree
+	//            	   Proj.
+	//                  |
+	//                 Sel.
+	//                  |
+	//                 Join
+	//                 /  \
+	//              Join   Dat.
+	//              /  \
+	//            Dat.  Dat.
+
 	if sel.From != nil {
 		p, err = buildResultSetNode(ctx, sel.From.TableRefs)
 		if err != nil {
@@ -176,7 +340,9 @@ func buildProjection(ctx Context, p plan.BasePlan, fields []*ast.SelectField) (p
 	proj := plan.PlanTreeNode{
 		Type: plan.ProjectionType,
 	}.Init()
-
+	for _, field := range fields {
+		proj.ColsName = append(proj.ColsName, field.Expr.(*ast.ColumnNameExpr).Name.String())
+	}
 	// schema := expression.NewSchema(make([]*expression.Column, 0, len(fields))...)
 
 	proj.SetChildren(p)
@@ -184,34 +350,34 @@ func buildProjection(ctx Context, p plan.BasePlan, fields []*ast.SelectField) (p
 }
 
 // splitWhere split a where expression to a list of AND conditions.
-// func splitWhere(where ast.ExprNode) []ast.ExprNode {
-// 	var conditions []ast.ExprNode
-// 	switch x := where.(type) {
-// 	case nil:
-// 	case *ast.BinaryOperationExpr:
-// 		if x.Op == opcode.LogicAnd {
-// 			conditions = append(conditions, splitWhere(x.L)...)
-// 			conditions = append(conditions, splitWhere(x.R)...)
-// 		} else {
-// 			conditions = append(conditions, x)
-// 		}
-// 	case *ast.ParenthesesExpr:
-// 		conditions = append(conditions, splitWhere(x.Expr)...)
-// 	default:
-// 		conditions = append(conditions, where)
-// 	}
-// 	return conditions
-// }
+func splitWhere(where ast.ExprNode) []ast.ExprNode {
+	var conditions []ast.ExprNode
+	switch x := where.(type) {
+	case nil:
+	case *ast.BinaryOperationExpr:
+		if x.Op == opcode.LogicAnd {
+			conditions = append(conditions, splitWhere(x.L)...)
+			conditions = append(conditions, splitWhere(x.R)...)
+		} else {
+			conditions = append(conditions, x)
+		}
+	case *ast.ParenthesesExpr:
+		conditions = append(conditions, splitWhere(x.Expr)...)
+	default:
+		conditions = append(conditions, where)
+	}
+	return conditions
+}
 
 func buildSelection(ctx Context, p plan.BasePlan, where ast.ExprNode) (plan.BasePlan, error) {
 
-	// conditions := splitWhere(where)
+	conditions := splitWhere(where)
 	// expressions := make([]expression.Expression, 0, len(conditions))
 	selection := plan.PlanTreeNode{
 		Type: plan.SelectType,
 	}.Init()
-	// TODO rewrite
-	// selection.Conditions = expressions
+
+	selection.Conditions = conditions
 	selection.SetChildren(p)
 	return selection, nil
 }
@@ -315,8 +481,9 @@ func TestParseDebug(t *testing.T) {
 	// parser and hanlder insert and select
 	my_parser := parser.New()
 	// stmt, _ := my_parser.ParseOneStmt("select * from a, b where a.id = b.id", "", "")
-	stmt, _ := my_parser.ParseOneStmt("select test.a, test2.b from test, test2 where test.a >= 2 && test2.b < 30;", "", "")
-	// stmt, _ := my_parser.ParseOneStmt("insert into book values(20000, 'hello world');", "", "")
+	// stmt, _ := my_parser.ParseOneStmt("select test.a, test2.b from test, test2 where test.a >= 2 and test2.b < 30;", "", "")
+	// stmt, _ := my_parser.ParseOneStmt("insert into customer values(20000, 'hello world', 2);", "", "")
+	stmt, _ := my_parser.ParseOneStmt("insert into publisher values(200000, 'hello world');", "", "")
 	// Otherwise do something with stmt
 	switch x := stmt.(type) {
 	case *ast.SelectStmt:

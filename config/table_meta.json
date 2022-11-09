@@ -1,7 +1,8 @@
 {
     "tables":[
         {
-            "table_name": "book", 
+            "table_name": "publisher", 
+            "fragmentation_type": "horizontal", 
             "columns": [
                 {
                     "col_name": "id",
@@ -14,7 +15,8 @@
             ]
         }, 
         {
-            "table_name": "consumer", 
+            "table_name": "customer", 
+            "fragmentation_type": "vertical",
             "columns": [
                 {
                     "col_name": "id",
@@ -23,6 +25,10 @@
                 {
                     "col_name": "name",
                     "type": "string"
+                },
+                {
+                    "col_name": "rank",
+                    "type": "int"
                 }
             ]
         }

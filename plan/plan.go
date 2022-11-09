@@ -1,5 +1,9 @@
 package plan
 
+import (
+	"github.com/pingcap/tidb/parser/ast"
+)
+
 type NodeType int32
 
 const (
@@ -28,10 +32,10 @@ type PlanTreeNode struct {
 	DestCoordintorId int    // fragment
 	FromTableName    string // valid if NodeType = DataSource
 	// SelectType
-	Conditions string
+	Conditions []ast.ExprNode
 
 	// ProjectionType
-	Cols string
+	ColsName []string
 }
 
 func (p PlanTreeNode) Init() *PlanTreeNode {
