@@ -15,16 +15,35 @@ const (
 	UnionType      NodeType = 5
 )
 
-type BasePlan interface {
-
-	// SetChildren sets the children for the plan.
-	SetChildren(...BasePlan)
+func (s NodeType) String() string {
+	switch s {
+	case DataSourceType:
+		return "DataSourceType"
+	case SelectType:
+		return "SelectType"
+	case ProjectionType:
+		return "ProjectionType"
+	case JoinType:
+		return "JoinType"
+	case UnionType:
+		return "UnionType"
+	default:
+		return "Unknown"
+	}
 }
+
+// type BasePlan interface {
+
+// 	// SetChildren sets the children for the plan.
+// 	SetChildren(...BasePlan)
+// 	GetChild(index int) BasePlan
+// 	GetChildrenNum() int
+// }
 
 type PlanTreeNode struct {
 	// NodeId int
 	// self     BasePlan
-	children []BasePlan
+	children []*PlanTreeNode
 	Type     NodeType
 
 	// DataSourceType
@@ -42,6 +61,14 @@ func (p PlanTreeNode) Init() *PlanTreeNode {
 	return &p
 }
 
-func (p *PlanTreeNode) SetChildren(children ...BasePlan) {
+func (p *PlanTreeNode) SetChildren(children ...*PlanTreeNode) {
 	p.children = children
+}
+
+func (p PlanTreeNode) GetChildrenNum() int {
+	return len(p.children)
+}
+
+func (p PlanTreeNode) GetChild(index int) *PlanTreeNode {
+	return p.children[index]
 }

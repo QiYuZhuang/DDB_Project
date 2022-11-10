@@ -465,7 +465,199 @@ type Context struct {
 	partitions  Partitions
 }
 
-func HandleSelect(ctx Context, sel *ast.SelectStmt) (p plan.BasePlan, err error) {
+// func unfoldWildStar(p LogicalPlan, selectFields []*ast.SelectField) (resultList []*ast.SelectField, err error) {
+// 	join, isJoin := p.(*LogicalJoin)
+// 	for i, field := range selectFields {
+// 		if field.WildCard == nil {
+// 			resultList = append(resultList, field)
+// 			continue
+// 		}
+// 		if field.WildCard.Table.L == "" && i > 0 {
+// 			return nil, ErrInvalidWildCard
+// 		}
+// 		list := unfoldWildStar(field, p.OutputNames(), p.Schema().Columns)
+// 		// For sql like `select t1.*, t2.* from t1 join t2 using(a)` or `select t1.*, t2.* from t1 natual join t2`,
+// 		// the schema of the Join doesn't contain enough columns because the join keys are coalesced in this schema.
+// 		// We should collect the columns from the fullSchema.
+// 		if isJoin && join.fullSchema != nil && field.WildCard.Table.L != "" {
+// 			list = unfoldWildStar(field, join.fullNames, join.fullSchema.Columns)
+// 		}
+// 		// if len(list) == 0 {
+// 		// 	return nil, ErrBadTable.GenWithStackByArgs(field.WildCard.Table)
+// 		// }
+// 		resultList = append(resultList, list...)
+// 	}
+// 	return resultList, nil
+// }
+
+func PrintPlanTree(p *plan.PlanTreeNode) string {
+	var result string
+	nums := p.GetChildrenNum()
+	if nums == 0 {
+		return result
+	}
+	//新建一个队列
+	queue := []*plan.PlanTreeNode{p}
+
+	i := 0
+	for len(queue) > 0 {
+		//新建临时队列，用于重新给queue赋值
+		temp := []*plan.PlanTreeNode{}
+		//新建每一行的一维数组
+
+		for _, v := range queue {
+			//
+			if v.Type == plan.DataSourceType {
+				result += v.Type.String() + "[" + v.FromTableName + "]" + " "
+			} else {
+				result += v.Type.String() + " "
+			}
+
+			nums := v.GetChildrenNum()
+			if nums == 0 {
+				continue
+			}
+			for i := 0; i < nums; i++ {
+				cur_node := v.GetChild(i)
+				temp = append(temp, cur_node)
+			}
+		}
+		result += "\n"
+		i++
+		//二叉树新的一行的节点放入队列中
+		queue = temp
+	}
+	return result
+}
+
+func SplitFragTable_(ctx Context, p *plan.PlanTreeNode) error {
+	var frags_ Partition
+	var err error
+	is_find_ := false
+
+	for _, partition := range ctx.partitions.Partitions {
+		if strings.EqualFold(partition.TableName, p.FromTableName) {
+			frags_ = partition
+			is_find_ = true
+			break
+		}
+	}
+	if is_find_ == false {
+		err = errors.New("fail to find table " + p.FromTableName + " in any frags")
+		return err
+	}
+
+	// find and expand the frag tables
+	for index_, site_info := range frags_.SiteInfos {
+		if index_ == len(frags_.SiteInfos)-1 {
+			p.FromTableName = site_info.Name
+			continue
+		}
+
+		if strings.EqualFold(frags_.FragType, "HORIZONTAL") {
+			p.Type = plan.UnionType
+			p.FromTableName = ""
+
+			left := plan.PlanTreeNode{
+				Type:          plan.DataSourceType,
+				FromTableName: site_info.Name,
+			}.Init()
+			right := plan.PlanTreeNode{
+				Type:          plan.DataSourceType,
+				FromTableName: site_info.Name,
+			}.Init()
+			p.SetChildren(left, right)
+
+		} else {
+			p.Type = plan.JoinType
+			p.FromTableName = ""
+
+			left := plan.PlanTreeNode{
+				Type:          plan.DataSourceType,
+				FromTableName: site_info.Name,
+			}.Init()
+			right := plan.PlanTreeNode{
+				Type:          plan.DataSourceType,
+				FromTableName: site_info.Name,
+			}.Init()
+			p.SetChildren(left, right)
+		}
+		p = p.GetChild(0)
+	}
+	return nil
+}
+
+func SplitFragTable(ctx Context, p *plan.PlanTreeNode) {
+	nums := p.GetChildrenNum()
+	for i := 0; i < nums; i++ {
+		child_ := p.GetChild(i)
+		if child_.Type == plan.DataSourceType {
+			//
+			SplitFragTable_(ctx, child_)
+		} else {
+			SplitFragTable(ctx, child_)
+		}
+	}
+}
+
+func tryPushDown(subWhere string, beginNode int64) {
+	// pos := find2ChildNode(beginNode)
+	// if pos == -1 { //若为-1则说明没有两个孩子的节点，只能加在curPos上
+	// 	addWhereNodeOnTop(iparser.CreateSelectionNode(iparser.GetTmpTableName(), subWhere), beginNode)
+	// } else {
+	// 	flag1 := checkCols(subWhere, pt.Nodes[pt.Nodes[pos].Left].Rel_cols)
+	// 	flag2 := checkCols(subWhere, pt.Nodes[pt.Nodes[pos].Right].Rel_cols)
+	// 	if flag1 == false && flag2 == false {
+	// 		addWhereNodeOnTop(iparser.CreateSelectionNode(iparser.GetTmpTableName(), subWhere), pos)
+	// 	}
+	// 	if flag1 == true {
+	// 		tryPushDown(subWhere, pt.Nodes[pos].Left)
+	// 	}
+	// 	if flag2 == true {
+	// 		tryPushDown(subWhere, pt.Nodes[pos].Right)
+	// 	}
+	// }
+}
+
+func SelectionPushDown(p *plan.PlanTreeNode) {
+	// nums := p.GetChildrenNum()
+	// for i := 0; i < nums; i++ {
+	// 	child_ := p.GetChild(i)
+	// 	if child_.Type == plan.SelectType {
+	// 		//按照and分割where子句
+	// 		//方法：先按照空格分割，然后检测and来组合
+	// 		wheres := p.Conditions
+	// 		for _, subWhere := range wheres {
+	// 			subWhere = "where " + subWhere
+	// 			tryPushDown(subWhere, node.Nodeid)
+	// 		}
+	// 		deleteWhereNode(node.Nodeid)
+	// 	}
+	// }
+	// for _, node := range pt.Nodes {
+	// 	if node.NodeType == 2 {
+	// 		//按照and分割where子句
+	// 		//方法：先按照空格分割，然后检测and来组合
+	// 		wheres := strings.Split(node.Where, "and")
+	// 		for _, subWhere := range wheres {
+	// 			subWhere = "where " + subWhere
+	// 			tryPushDown(subWhere, node.Nodeid)
+	// 		}
+	// 		deleteWhereNode(node.Nodeid)
+	// 	}
+
+	// }
+
+	// for i, node := range pt.Nodes {
+	// 	if node.NodeType == 1 && node.TransferFlag == false {
+	// 		pt.Nodes[i].Status = 1
+	// 	} else {
+	// 		pt.Nodes[i].Status = 0
+	// 	}
+	// }
+}
+
+func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *plan.PlanTreeNode, err error) {
 	// generate Logical Plan tree
 	//            	   Proj.
 	//                  |
@@ -488,9 +680,9 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p plan.BasePlan, err error)
 	// TODO unfold wildstar in `projection`
 	// originalFields := sel.Fields.Fields
 	// sel.Fields.Fields, err = unfoldWildStar(p, sel.Fields.Fields)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	if err != nil {
+		return nil, err
+	}
 
 	if sel.Where != nil {
 		p, err = buildSelection(ctx, p, sel.Where)
@@ -504,11 +696,24 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p plan.BasePlan, err error)
 		return nil, err
 	}
 
+	print := PrintPlanTree(p)
+	fmt.Println(print)
+
+	SplitFragTable(ctx, p)
+
+	print = PrintPlanTree(p)
+	fmt.Println(print)
+
+	SelectionPushDown(p)
+
+	print = PrintPlanTree(p)
+	fmt.Println(print)
+
 	return p, err
 }
 
 // buildProjection returns a Projection plan and non-aux columns length.
-func buildProjection(ctx Context, p plan.BasePlan, fields []*ast.SelectField) (plan.BasePlan, error) {
+func buildProjection(ctx Context, p *plan.PlanTreeNode, fields []*ast.SelectField) (*plan.PlanTreeNode, error) {
 	proj := plan.PlanTreeNode{
 		Type: plan.ProjectionType,
 	}.Init()
@@ -541,7 +746,7 @@ func splitWhere(where ast.ExprNode) []ast.ExprNode {
 	return conditions
 }
 
-func buildSelection(ctx Context, p plan.BasePlan, where ast.ExprNode) (plan.BasePlan, error) {
+func buildSelection(ctx Context, p *plan.PlanTreeNode, where ast.ExprNode) (*plan.PlanTreeNode, error) {
 
 	conditions := splitWhere(where)
 	// expressions := make([]expression.Expression, 0, len(conditions))
@@ -554,7 +759,7 @@ func buildSelection(ctx Context, p plan.BasePlan, where ast.ExprNode) (plan.Base
 	return selection, nil
 }
 
-func buildJoin(ctx Context, joinNode *ast.Join) (plan.BasePlan, error) {
+func buildJoin(ctx Context, joinNode *ast.Join) (*plan.PlanTreeNode, error) {
 	if joinNode.Right == nil {
 		return buildResultSetNode(ctx, joinNode.Left)
 	}
@@ -579,7 +784,7 @@ func buildJoin(ctx Context, joinNode *ast.Join) (plan.BasePlan, error) {
 	return joinPlan, nil
 }
 
-func buildDataSource(ctx Context, tn *ast.TableName) (plan.BasePlan, error) {
+func buildDataSource(ctx Context, tn *ast.TableName) (*plan.PlanTreeNode, error) {
 	// dbName := tn.Schema
 	// TODO check table in this db
 	// tbl, err := b.is.TableByName(dbName, tn.Name)
@@ -595,7 +800,7 @@ func buildDataSource(ctx Context, tn *ast.TableName) (plan.BasePlan, error) {
 	return result, nil
 }
 
-func buildResultSetNode(ctx Context, node ast.ResultSetNode) (p plan.BasePlan, err error) {
+func buildResultSetNode(ctx Context, node ast.ResultSetNode) (p *plan.PlanTreeNode, err error) {
 	switch x := node.(type) {
 	case *ast.Join:
 		return buildJoin(ctx, x)
@@ -797,29 +1002,51 @@ func TestParseDebug(t *testing.T) {
 		// "insert into publisher values(103999, 'zzq2', 'USA');",
 		// "insert into publisher values(104000, 'aa1', 'PRC');",
 		// "insert into publisher values(104000, 'dss2', 'USA');",
-		"insert into customer values(20000, 'hello world', 2);",
-		"insert into customer values(20000, 'hello world', 2);",
-		"drop table customer;",
-		`create partition on |PUBLISHER| [horizontal]
-			at (10.77.110.145, 10.77.110.146, 10.77.110.145, 10.77.110.146)
-			where {
-			 "PUBLISHER.1" : ID < 104000 and NATION = 'PRC';
-			 "PUBLISHER.2" : ID < 104000 and NATION = 'USA';
-			 "PUBLISHER.3" : ID >= 104000 and NATION = 'PRC';
-			 "PUBLISHER.4" : ID >= 104000 and NATION = 'USA'
-			};`,
-		`create partition on |CUSTOMER| [vertical]
-			at (10.77.110.145, 10.77.110.146)
-			where {
-			"CUSTOMER.1" : ID, NAME;
-			"CUSTOMER.2" : ID, rank
-			};`,
+		// "insert into customer values(20000, 'hello world', 2);",
+		// "insert into customer values(20000, 'hello world', 2);",
+		// "drop table customer;",
+		// `create partition on |PUBLISHER| [horizontal]
+		// 	at (10.77.110.145, 10.77.110.146, 10.77.110.145, 10.77.110.146)
+		// 	where {
+		// 	 "PUBLISHER.1" : ID < 104000 and NATION = 'PRC';
+		// 	 "PUBLISHER.2" : ID < 104000 and NATION = 'USA';
+		// 	 "PUBLISHER.3" : ID >= 104000 and NATION = 'PRC';
+		// 	 "PUBLISHER.4" : ID >= 104000 and NATION = 'USA'
+		// 	};`,
+		// `create partition on |CUSTOMER| [vertical]
+		// 	at (10.77.110.145, 10.77.110.146)
+		// 	where {
+		// 	"CUSTOMER.1" : ID, NAME;
+		// 	"CUSTOMER.2" : ID, rank
+		// 	};`,
+		// "select * from Customer;",
+		// "select Publisher.name from Publisher;",
+		// `select Customer.name,Orders.quantity
+		// from Customer,Orders
+		// where Customer.id=Orders.customer_id`,
+		` select Book.title,Book.copies, 
+		  Publisher.name,Publisher.nation
+		  from Book,Publisher
+		  where Book.publisher_id=Publisher.id
+		  and Publisher.nation='USA'
+		  and Book.copies > 1000`,
+		// `select Customer.name, Book.title, Publisher.name, Orders.quantity
+		// from Customer, Book, Publisher, Orders
+		// where
+		// Customer.id=Orders.customer_id
+		// and Book.id=Orders.book_id
+		// and Book.publisher_id=Publisher.id
+		// and Customer.id>308000
+		// and Book.copies>100
+		// and Orders.quantity>1
+		// and Publisher.nation='PRC'
+		// `,
 	}
 
 	for _, sql_str := range sql_strs {
 		sql_str = strings.ToUpper(sql_str)
-		sql_str = strings.Replace(sql_str, "\t", "", -1)
-		sql_str = strings.Replace(sql_str, "\n", "", -1)
+		sql_str = strings.Replace(sql_str, "\t", " ", -1)
+		sql_str = strings.Replace(sql_str, "\n", " ", -1)
 
 		fmt.Println(sql_str)
 		if strings.Contains(sql_str, "PARTITION") {
@@ -857,3 +1084,55 @@ func TestParseDebug(t *testing.T) {
 		}
 	}
 }
+
+// func ParseAndExecute(c *core.Coordinator, sql_str string) (*plan.PlanTreeNode, []SqlRouter, error) {
+// 	var p *plan.PlanTreeNode
+// 	var ret []SqlRouter
+// 	var err error
+
+// 	my_parser := parser.New()
+
+// 	sql_str = strings.ToUpper(sql_str)
+// 	sql_str = strings.Replace(sql_str, "\t", "", -1)
+// 	sql_str = strings.Replace(sql_str, "\n", "", -1)
+
+// 	fmt.Println(sql_str)
+// 	if strings.Contains(sql_str, "PARTITION") {
+// 		sql_str = strings.Replace(sql_str, " ", "", -1)
+// 		_, err := HandlePartitionSQL(sql_str)
+// 		if err != nil {
+// 			fmt.Println(err)
+// 		}
+// 	} else {
+// 		stmt, err := my_parser.ParseOneStmt(sql_str, "", "")
+// 		if err != nil {
+// 			fmt.Println(err)
+// 		}
+
+// 		// Otherwise do something with stmt
+// 		switch x := stmt.(type) {
+// 		case *ast.SelectStmt:
+// 			fmt.Println("Select")
+// 			p, err = HandleSelect(c, x)
+// 		case *ast.InsertStmt:
+// 			fmt.Println("Insert") // same as delete
+// 			ret, err = HandleInsert(c, x)
+// 		case *ast.CreateTableStmt:
+// 			fmt.Println("create table") // same as delete
+// 			ret, err = HandleCreateTable(c, x)
+// 		case *ast.DropTableStmt:
+// 			ret, err = HandleDropTable(c, x)
+// 		case *ast.DeleteStmt:
+// 			fmt.Println("delete") // same as delete
+// 			ret, err = HandleDelete(c, x)
+// 		default:
+// 			// createdb, dropdb, create table, drop table, all broadcast
+// 			ret, err = BroadcastSQL(c, x)
+// 		}
+// 	}
+// 	if err != nil {
+// 		fmt.Println(err)
+// 	}
+// 	return p, ret, err
+
+// }
