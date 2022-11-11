@@ -21,6 +21,7 @@ import (
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/ast"
 	"github.com/pingcap/tidb/parser/opcode"
+	"github.com/pingcap/tidb/parser/test_driver"
 	_ "github.com/pingcap/tidb/parser/test_driver"
 )
 
@@ -492,10 +493,6 @@ type Context struct {
 
 func PrintPlanTree(p *plan.PlanTreeNode) string {
 	var result string
-	nums := p.GetChildrenNum()
-	if nums == 0 {
-		return result
-	}
 	//新建一个队列
 	queue := []*plan.PlanTreeNode{p}
 
@@ -508,6 +505,8 @@ func PrintPlanTree(p *plan.PlanTreeNode) string {
 		for _, v := range queue {
 			//
 			if v.Type == plan.DataSourceType {
+				result += v.Type.String() + "[" + v.FromTableName + "]" + " "
+			} else if v.Type == plan.JoinType || v.Type == plan.UnionType {
 				result += v.Type.String() + "[" + v.FromTableName + "]" + " "
 			} else {
 				result += v.Type.String() + " "
@@ -530,6 +529,72 @@ func PrintPlanTree(p *plan.PlanTreeNode) string {
 	return result
 }
 
+func InitFragWithCondition(frag_info Partition, frag_name string) ([]ast.ExprNode, []string) {
+	var conds_ []ast.ExprNode
+	var cols_ []string
+
+	if strings.EqualFold(frag_info.FragType, "HORIZONTAL") {
+		for _, frag_ := range frag_info.HFragInfos {
+			if strings.EqualFold(frag_.FragName, frag_name) {
+				for _, cond_ := range frag_.Conditions {
+					var new_expr_node ast.BinaryOperationExpr
+					var col_attr_node ast.ColumnNameExpr
+					var name ast.ColumnName
+					name.Table.O = frag_.FragName
+					name.Name.O = cond_.ColName
+
+					col_attr_node.Name = &name
+					new_expr_node.L = &col_attr_node
+
+					if cond_.Equal == "" {
+						// <  >=
+						if cond_.LessThan != "" {
+							new_expr_node_ := new_expr_node
+							new_expr_node_.Op = opcode.LT
+
+							var val_attr_node test_driver.ValueExpr
+							val_attr_node.Datum.SetString(cond_.LessThan)
+							val_attr_node.SetText(cond_.LessThan)
+							new_expr_node_.R = &val_attr_node
+
+							conds_ = append(conds_, &new_expr_node_)
+						}
+						if cond_.GreaterEqualThan != "" {
+							new_expr_node_ := new_expr_node
+							new_expr_node_.Op = opcode.GE
+
+							var val_attr_node test_driver.ValueExpr
+							val_attr_node.Datum.SetString(cond_.GreaterEqualThan)
+							val_attr_node.SetText(cond_.GreaterEqualThan)
+							new_expr_node_.R = &val_attr_node
+
+							conds_ = append(conds_, &new_expr_node_)
+						}
+					} else {
+						// ==
+						new_expr_node_ := new_expr_node
+						new_expr_node_.Op = opcode.EQ
+
+						var val_attr_node test_driver.ValueExpr
+						val_attr_node.Datum.SetString(cond_.Equal)
+						val_attr_node.SetText(cond_.Equal)
+						new_expr_node_.R = &val_attr_node
+
+						conds_ = append(conds_, &new_expr_node_)
+					}
+				}
+			}
+		}
+	} else {
+		for _, frag_ := range frag_info.VFragInfos {
+			if strings.EqualFold(frag_.SiteName, frag_name) {
+				cols_ = append(cols_, frag_.ColumnName...)
+			}
+		}
+	}
+	return conds_, cols_
+}
+
 func SplitFragTable_(ctx Context, p *plan.PlanTreeNode) error {
 	var frags_ Partition
 	var err error
@@ -548,41 +613,28 @@ func SplitFragTable_(ctx Context, p *plan.PlanTreeNode) error {
 	}
 
 	// find and expand the frag tables
-	for index_, site_info := range frags_.SiteInfos {
-		if index_ == len(frags_.SiteInfos)-1 {
-			p.FromTableName = site_info.Name
-			continue
-		}
-
+	for _, site_info := range frags_.SiteInfos {
 		if strings.EqualFold(frags_.FragType, "HORIZONTAL") {
 			p.Type = plan.UnionType
-			p.FromTableName = ""
-
-			left := plan.PlanTreeNode{
+			node := plan.PlanTreeNode{
 				Type:          plan.DataSourceType,
 				FromTableName: site_info.Name,
 			}.Init()
-			right := plan.PlanTreeNode{
-				Type:          plan.DataSourceType,
-				FromTableName: site_info.Name,
-			}.Init()
-			p.SetChildren(left, right)
+			//
+			conds_, _ := InitFragWithCondition(frags_, site_info.Name)
+			node.Conditions = append(node.Conditions, conds_...)
+			p.AddChild(node)
 
 		} else {
 			p.Type = plan.JoinType
-			p.FromTableName = ""
-
-			left := plan.PlanTreeNode{
+			node := plan.PlanTreeNode{
 				Type:          plan.DataSourceType,
 				FromTableName: site_info.Name,
 			}.Init()
-			right := plan.PlanTreeNode{
-				Type:          plan.DataSourceType,
-				FromTableName: site_info.Name,
-			}.Init()
-			p.SetChildren(left, right)
+			_, cols_ := InitFragWithCondition(frags_, site_info.Name)
+			node.ColsName = append(node.ColsName, cols_...)
+			p.AddChild(node)
 		}
-		p = p.GetChild(0)
 	}
 	return nil
 }
@@ -619,7 +671,273 @@ func tryPushDown(subWhere string, beginNode int64) {
 	// }
 }
 
-func SelectionPushDown(p *plan.PlanTreeNode) {
+type ColType int
+
+const (
+	//1 for table, 2 for select, 3 for projuection, 4 for join, 5 for union
+	AttrType  ColType = 1
+	ValueType ColType = 2
+)
+
+func GetCondition(expr *ast.BinaryOperationExpr) (ColType, ColType,
+	ast.ColumnNameExpr, ast.ColumnNameExpr,
+	test_driver.ValueExpr, test_driver.ValueExpr,
+	error) {
+	var left ColType
+	var right ColType
+	var left_attr ast.ColumnNameExpr
+	var right_attr ast.ColumnNameExpr
+	var left_val test_driver.ValueExpr
+	var right_val test_driver.ValueExpr
+
+	switch x := expr.R.(type) {
+	case *ast.ColumnNameExpr:
+		right = AttrType
+		right_attr = *x
+	case *test_driver.ValueExpr:
+		right = ValueType
+		right_val = *x
+	default:
+		return left, right, left_attr, right_attr, left_val, right_val, errors.New("fail to type cast into BinaryOperationExpr")
+	}
+
+	switch x := expr.L.(type) {
+	case *ast.ColumnNameExpr:
+		left = AttrType
+		left_attr = *x
+	case *test_driver.ValueExpr:
+		left = ValueType
+		left_val = *x
+	default:
+		return left, right, left_attr, right_attr, left_val, right_val, errors.New("fail to type cast into BinaryOperationExpr")
+	}
+	return left, right, left_attr, right_attr, left_val, right_val, nil
+}
+
+func PushDownPredicates(ctx Context, frag_node *plan.PlanTreeNode, where *plan.PlanTreeNode) (err error) {
+	for index_, cond_ := range where.Conditions {
+		expr, ok := cond_.(*ast.BinaryOperationExpr)
+		if !ok {
+			return errors.New("fail to type cast into BinaryOperationExpr")
+		}
+		left, right, left_attr, _, _, _, err := GetCondition(expr)
+		if err != nil {
+			return err
+		}
+		if left == AttrType && right == AttrType {
+			continue
+		} else if left == AttrType && right == ValueType {
+			cur_table_name := strings.ToUpper(left_attr.Name.Table.String())
+			if strings.Contains(frag_node.FromTableName, cur_table_name) {
+				frag_node.Conditions = append(frag_node.Conditions, expr)
+				fmt.Println("Condition [" + strconv.FormatInt(int64(index_), 10) + "] adds to " + frag_node.FromTableName)
+			}
+
+		} else {
+			return errors.New("not support")
+		}
+	}
+	return nil
+}
+
+type DataRange struct {
+	FieldType string
+	LValueStr string
+	RValueStr string
+	//
+	LValueInt int
+	RValueInt int
+}
+
+func RetureType(table_metas TableMetas, table_name string, col_name string) (string, error) {
+	for _, table := range table_metas.TableMetas {
+		if strings.Contains(table_name, table.TableName) {
+			for _, col := range table.Columns {
+				if strings.EqualFold(col.ColumnName, col_name) {
+					return col.Type, nil
+				}
+			}
+		}
+	}
+	return "", errors.New("not find this col" + col_name + table_name)
+}
+
+func GetPredicatePruning(ctx Context, frag_node *plan.PlanTreeNode) error {
+	// get single table pruned
+	condition_range := make(map[string]DataRange)
+
+	// len := len(frag_node.Conditions)
+	// for i := 0; i < len; i++ {
+	for _, cond_ := range frag_node.Conditions {
+		expr, ok := cond_.(*ast.BinaryOperationExpr)
+		if !ok {
+			return errors.New("fail to type cast into BinaryOperationExpr")
+		}
+		left, right, left_attr, _, _, right_val, err := GetCondition(expr)
+		if err != nil {
+			return err
+		}
+
+		if left == AttrType && right == AttrType {
+			continue
+		} else if left == AttrType && right == ValueType {
+			attr_num := left_attr.Name.Name.String()
+			var new_range DataRange
+			type_, err := RetureType(ctx.table_metas, left_attr.Name.Table.String(), left_attr.Name.Name.String())
+			if err != nil {
+				return nil
+			}
+			new_range.FieldType = type_
+
+			switch expr.Op {
+			case opcode.EQ:
+				if type_ == "string" {
+					new_range.LValueStr = right_val.GetDatumString()
+					new_range.LValueStr = right_val.GetDatumString()
+				} else {
+					new_range.LValueInt, _ = strconv.Atoi(right_val.Text())
+					new_range.LValueInt, _ = strconv.Atoi(right_val.Text())
+				}
+			case opcode.LT:
+				if type_ == "string" {
+					new_range.LValueStr = ""
+					new_range.RValueStr = right_val.GetDatumString()
+				} else {
+					new_range.LValueInt = MinInt
+					new_range.RValueInt, _ = strconv.Atoi(right_val.Text())
+				}
+			case opcode.GE, opcode.GT:
+				if type_ == "string" {
+					new_range.LValueStr = right_val.GetDatumString()
+					new_range.RValueStr = ""
+				} else {
+					new_range.LValueInt, _ = strconv.Atoi(right_val.Text())
+					new_range.RValueInt = MaxInt
+				}
+			default:
+				return errors.New("fail to support cur expr op")
+			}
+			_, ok = condition_range[attr_num]
+			if !ok {
+				//
+				condition_range[attr_num] = new_range
+			} else {
+				// exists, check if overlap
+				cur_range := condition_range[attr_num]
+				if expr.Op == opcode.EQ {
+					if type_ == "string" {
+						if cur_range.LValueStr != new_range.LValueStr {
+							frag_node.IsPruned = true
+							fmt.Println("frag_node " + frag_node.FromTableName + " IS PRUNED")
+							break
+						}
+					} else {
+						if cur_range.LValueInt != new_range.LValueInt {
+							frag_node.IsPruned = true
+							fmt.Println("frag_node " + frag_node.FromTableName + " IS PRUNED")
+							break
+						}
+					}
+				} else {
+					// [L,    R]
+					//    [L,R]
+					if type_ == "string" {
+						if condition_range[attr_num].LValueStr == "" {
+							cur_range.LValueStr = new_range.LValueStr
+						} else {
+							if cur_range.LValueStr < new_range.LValueStr {
+								cur_range.LValueStr = new_range.LValueStr
+							}
+						}
+						if condition_range[attr_num].RValueStr == "" {
+							cur_range.RValueStr = new_range.RValueStr
+						} else {
+							if new_range.RValueStr < cur_range.RValueStr {
+								cur_range.RValueStr = new_range.RValueStr
+							}
+						}
+						if cur_range.LValueStr != "" && cur_range.RValueStr != "" && cur_range.LValueStr > cur_range.RValueStr {
+							frag_node.IsPruned = true
+							fmt.Println("frag_node " + frag_node.FromTableName + " IS PRUNED")
+							break
+						}
+					} else {
+						if cur_range.LValueInt < new_range.LValueInt {
+							cur_range.LValueInt = new_range.LValueInt
+						}
+						if new_range.RValueInt < cur_range.RValueInt {
+							cur_range.RValueInt = new_range.RValueInt
+						}
+						if cur_range.LValueInt > cur_range.RValueInt {
+							frag_node.IsPruned = true
+							fmt.Println("frag_node " + frag_node.FromTableName + " IS PRUNED")
+							break
+						}
+					}
+				}
+			}
+
+		} else {
+			return errors.New("not support")
+		}
+
+	}
+	return nil
+}
+
+func SelectionPushDown(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTreeNode) error {
+
+	cur_ptr := from
+	for {
+		child_num := cur_ptr.GetChildrenNum()
+		if child_num == 1 && cur_ptr.FromTableName == "" {
+			cur_ptr = cur_ptr.GetChild(0)
+			continue
+		}
+
+		if cur_ptr.FromTableName == "" {
+			//
+			// JionType[] <- cur_ptr
+			// UnionType[ORDERS] UnionType[PUBLISHER] <- cur_table_ptr
+			// DataSourceType[ORDERS.1] DataSourceType[ORDERS.2] DataSourceType[ORDERS.3] DataSourceType[ORDERS.4] DataSourceType[PUBLISHER.1] DataSourceType[PUBLISHER.2] DataSourceType[PUBLISHER.3] DataSourceType[PUBLISHER.4]
+			child_num = cur_ptr.GetChildrenNum()
+			for i := 0; i < child_num; i++ {
+				cur_table_ptr := cur_ptr.GetChild(i)
+				frag_num := cur_table_ptr.GetChildrenNum()
+				for j := 0; j < frag_num; j++ {
+					frag_ptr := cur_table_ptr.GetChild(j)
+					err := PushDownPredicates(ctx, frag_ptr, where)
+					if err != nil {
+						return err
+					}
+
+					err = GetPredicatePruning(ctx, frag_ptr)
+					if err != nil {
+						return err
+					}
+				}
+			}
+
+			break
+		} else {
+			// UnionType[ORDERS]
+			// DataSourceType[ORDERS.1] DataSourceType[ORDERS.2] DataSourceType[ORDERS.3]
+			child_num = cur_ptr.GetChildrenNum()
+
+			break
+		}
+
+	}
+	return nil
+	// for i := 0; i < nums; i++ {
+	// 	child_ := from.GetChild(i)
+	// 	if child_.Type == plan.UnionType || child_.Type == plan.JoinType || child_.Type == plan.DataSourceType {
+	// 		//
+	// 		SplitFragTable_(ctx, child_)
+	// 	} else {
+	// 		// SelectionPushDown(ctx, child_)
+	// 	}
+	// }
 	// nums := p.GetChildrenNum()
 	// for i := 0; i < nums; i++ {
 	// 	child_ := p.GetChild(i)
@@ -628,7 +946,7 @@ func SelectionPushDown(p *plan.PlanTreeNode) {
 	// 		//方法：先按照空格分割，然后检测and来组合
 	// 		wheres := p.Conditions
 	// 		for _, subWhere := range wheres {
-	// 			subWhere = "where " + subWhere
+	// 			sub_where_string = "where " + subWhere.Text()
 	// 			tryPushDown(subWhere, node.Nodeid)
 	// 		}
 	// 		deleteWhereNode(node.Nodeid)
@@ -669,8 +987,12 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *plan.PlanTreeNode, err e
 	//              /  \
 	//            Dat.  Dat.
 
+	var from *plan.PlanTreeNode
+	var where *plan.PlanTreeNode
+	var proj *plan.PlanTreeNode
+
 	if sel.From != nil {
-		p, err = buildResultSetNode(ctx, sel.From.TableRefs)
+		from, err = buildResultSetNode(ctx, sel.From.TableRefs)
 		if err != nil {
 			return nil, err
 		}
@@ -685,35 +1007,34 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *plan.PlanTreeNode, err e
 	}
 
 	if sel.Where != nil {
-		p, err = buildSelection(ctx, p, sel.Where)
+		where, err = buildSelection(ctx, sel.Where)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	p, err = buildProjection(ctx, p, sel.Fields.Fields)
+	proj, err = buildProjection(ctx, sel.Fields.Fields)
 	if err != nil {
 		return nil, err
 	}
 
-	print := PrintPlanTree(p)
-	fmt.Println(print)
+	fmt.Println(PrintPlanTree(from))
+	fmt.Println(PrintPlanTree(where))
+	fmt.Println(PrintPlanTree(proj))
 
-	SplitFragTable(ctx, p)
+	SplitFragTable(ctx, from)
 
-	print = PrintPlanTree(p)
-	fmt.Println(print)
+	fmt.Println(PrintPlanTree(from))
 
-	SelectionPushDown(p)
+	SelectionPushDown(ctx, from, where)
 
-	print = PrintPlanTree(p)
-	fmt.Println(print)
+	fmt.Println(PrintPlanTree(from))
 
 	return p, err
 }
 
 // buildProjection returns a Projection plan and non-aux columns length.
-func buildProjection(ctx Context, p *plan.PlanTreeNode, fields []*ast.SelectField) (*plan.PlanTreeNode, error) {
+func buildProjection(ctx Context, fields []*ast.SelectField) (*plan.PlanTreeNode, error) {
 	proj := plan.PlanTreeNode{
 		Type: plan.ProjectionType,
 	}.Init()
@@ -722,7 +1043,7 @@ func buildProjection(ctx Context, p *plan.PlanTreeNode, fields []*ast.SelectFiel
 	}
 	// schema := expression.NewSchema(make([]*expression.Column, 0, len(fields))...)
 
-	proj.SetChildren(p)
+	// proj.SetChildren(p)
 	return proj, nil
 }
 
@@ -746,7 +1067,7 @@ func splitWhere(where ast.ExprNode) []ast.ExprNode {
 	return conditions
 }
 
-func buildSelection(ctx Context, p *plan.PlanTreeNode, where ast.ExprNode) (*plan.PlanTreeNode, error) {
+func buildSelection(ctx Context, where ast.ExprNode) (*plan.PlanTreeNode, error) {
 
 	conditions := splitWhere(where)
 	// expressions := make([]expression.Expression, 0, len(conditions))
@@ -755,27 +1076,80 @@ func buildSelection(ctx Context, p *plan.PlanTreeNode, where ast.ExprNode) (*pla
 	}.Init()
 
 	selection.Conditions = conditions
-	selection.SetChildren(p)
+	// selection.SetChildren(p)
 	return selection, nil
 }
 
 func buildJoin(ctx Context, joinNode *ast.Join) (*plan.PlanTreeNode, error) {
-	if joinNode.Right == nil {
-		return buildResultSetNode(ctx, joinNode.Left)
-	}
 
-	leftPlan, err := buildResultSetNode(ctx, joinNode.Left)
-	if err != nil {
-		return nil, err
-	}
-
-	rightPlan, err := buildResultSetNode(ctx, joinNode.Right)
-	if err != nil {
-		return nil, err
-	}
+	//新建一个队列
+	queue := []*ast.Join{joinNode}
 
 	joinPlan := plan.PlanTreeNode{Type: plan.JoinType}.Init()
-	joinPlan.SetChildren(leftPlan, rightPlan)
+
+	i := 0
+	for len(queue) > 0 {
+		//新建临时队列，用于重新给queue赋值
+		temp := []*ast.Join{}
+		//新建每一行的一维数组
+
+		for _, v := range queue {
+			//
+			if v.Right == nil {
+				p, err := buildResultSetNode(ctx, v.Left)
+				if err != nil {
+					return nil, err
+				}
+				joinPlan.AddChild(p)
+				continue
+			}
+			switch x := v.Right.(type) {
+			case *ast.Join:
+				temp = append(temp, x)
+			case *ast.TableSource:
+				p, err := buildResultSetNode(ctx, x)
+				if err != nil {
+					return nil, err
+				}
+				joinPlan.AddChild(p)
+			default:
+				return nil, errors.New("hello,error")
+			}
+
+			switch x := v.Left.(type) {
+			case *ast.Join:
+				temp = append(temp, x)
+			case *ast.TableSource:
+				p, err := buildResultSetNode(ctx, x)
+				if err != nil {
+					return nil, err
+				}
+				joinPlan.AddChild(p)
+			default:
+				return nil, errors.New("hello,error")
+			}
+		}
+		i++
+		//二叉树新的一行的节点放入队列中
+		queue = temp
+	}
+	// return result
+
+	// if joinNode.Right == nil {
+	// 	return buildResultSetNode(ctx, joinNode.Left)
+	// }
+
+	// leftPlan, err := buildResultSetNode(ctx, joinNode.Left)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// rightPlan, err := buildResultSetNode(ctx, joinNode.Right)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// joinPlan.SetChildren(leftPlan, rightPlan)
 	// TODO set schema and join node NAME
 	// joinPlan.SetSchema(expression.MergeSchema(leftPlan.Schema(), rightPlan.Schema()))
 	// joinPlan.names = make([]*types.FieldName, leftPlan.Schema().Len()+rightPlan.Schema().Len())
@@ -1024,12 +1398,12 @@ func TestParseDebug(t *testing.T) {
 		// `select Customer.name,Orders.quantity
 		// from Customer,Orders
 		// where Customer.id=Orders.customer_id`,
-		` select Book.title,Book.copies, 
-		  Publisher.name,Publisher.nation
-		  from Book,Publisher
-		  where Book.publisher_id=Publisher.id
-		  and Publisher.nation='USA'
-		  and Book.copies > 1000`,
+		// ` select Book.title,Book.copies,
+		//   Publisher.name,Publisher.nation
+		//   from Book,Publisher
+		//   where Book.publisher_id=Publisher.id
+		//   and Publisher.nation='USA'
+		//   and Book.copies > 1000`,
 		// `select Customer.name, Book.title, Publisher.name, Orders.quantity
 		// from Customer, Book, Publisher, Orders
 		// where
@@ -1041,6 +1415,18 @@ func TestParseDebug(t *testing.T) {
 		// and Orders.quantity>1
 		// and Publisher.nation='PRC'
 		// `,
+		`select Customer.name, Book.title,   
+		Publisher.name, Orders.quantity 
+		from Customer, Book, Publisher, 
+		Orders 
+		where 
+		Customer.id=Orders.customer_id 
+		and Book.id=Orders.book_id 
+		and Book.publisher_id=Publisher.id 
+		and Customer.id>308000 
+		and Book.copies>100 
+		and Orders.quantity>1 
+		and Publisher.nation='PRC'`,
 	}
 
 	for _, sql_str := range sql_strs {

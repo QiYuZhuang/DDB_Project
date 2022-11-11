@@ -166,7 +166,7 @@
                     "range": [
                         {
                             "col_name" : "CUSTOMER_ID",
-                            "get" : "0",
+                            "get" : "",
                             "lt" : "307000",
                             "eq" : ""
                         },

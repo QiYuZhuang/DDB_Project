@@ -55,6 +55,10 @@ type PlanTreeNode struct {
 
 	// ProjectionType
 	ColsName []string
+
+	IsPruned      bool
+	ExecuteSiteIP string
+	DestSiteIP    string
 }
 
 func (p PlanTreeNode) Init() *PlanTreeNode {
@@ -71,4 +75,12 @@ func (p PlanTreeNode) GetChildrenNum() int {
 
 func (p PlanTreeNode) GetChild(index int) *PlanTreeNode {
 	return p.children[index]
+}
+
+func (p *PlanTreeNode) AddChild(new_child *PlanTreeNode) {
+	p.children = append(p.children, new_child)
+}
+
+func (p *PlanTreeNode) RemoveChild(index int) {
+	p.children = append(p.children[:index], p.children[index+1:]...)
 }

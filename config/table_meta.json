@@ -38,7 +38,7 @@
             "table_name": "ORDERS", 
             "columns": [
                 {
-                    "col_name": "COUSTOMER_ID",
+                    "col_name": "CUSTOMER_ID",
                     "type": "int"
                 },
                 {
