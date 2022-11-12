@@ -51,7 +51,8 @@ type PlanTreeNode struct {
 	DestCoordintorId int    // fragment
 	FromTableName    string // valid if NodeType = DataSource
 	// SelectType
-	Conditions []ast.ExprNode
+	Conditions    []ast.ExprNode
+	ConditionsStr []string
 
 	// ProjectionType
 	ColsName []string
@@ -73,8 +74,12 @@ func (p PlanTreeNode) GetChildrenNum() int {
 	return len(p.children)
 }
 
-func (p PlanTreeNode) GetChild(index int) *PlanTreeNode {
+func (p *PlanTreeNode) GetChild(index int) *PlanTreeNode {
 	return p.children[index]
+}
+
+func (p *PlanTreeNode) ResetChild(index int, new_ *PlanTreeNode) {
+	p.children[index] = new_
 }
 
 func (p *PlanTreeNode) AddChild(new_child *PlanTreeNode) {
@@ -83,4 +88,11 @@ func (p *PlanTreeNode) AddChild(new_child *PlanTreeNode) {
 
 func (p *PlanTreeNode) RemoveChild(index int) {
 	p.children = append(p.children[:index], p.children[index+1:]...)
+}
+
+func (p *PlanTreeNode) RemoveAllChild() {
+	len := p.GetChildrenNum()
+	for i := 0; i < len; i++ {
+		p.RemoveChild(0)
+	}
 }

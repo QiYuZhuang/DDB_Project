@@ -541,15 +541,6 @@ func PrintPlanTree(p *plan.PlanTreeNode) string {
 	return result
 }
 
-// type PrintTree struct {
-// 	children []*PrintTree
-// 	node     *cgraph.Node
-// }
-
-// func PrintPlanTreePlot(p *plan.PlanTreeNode) {
-
-// }
-
 func PrintPlanTreePlot(p *plan.PlanTreeNode) string {
 	edge_id := 0
 	node_id := 0
@@ -578,22 +569,10 @@ func PrintPlanTreePlot(p *plan.PlanTreeNode) string {
 
 		for index_, v := range queue {
 			//
-			if v.IsPruned {
-				continue
-			}
-
-			// var cur_node_val string
-			// if v.Type == plan.DataSourceType {
-			// 	cur_node_val = v.Type.String() + "[" + v.FromTableName + "]" + " "
-			// } else if v.Type == plan.JoinType || v.Type == plan.UnionType {
-			// 	cur_node_val = v.Type.String() + "[" + v.FromTableName + "]" + " "
-			// } else {
-			// 	cur_node_val = v.Type.String() + " "
+			// if v.IsPruned {
+			// 	continue
 			// }
 
-			// result += cur_node_val
-
-			// graphvis_queue[index_].Set(strconv.Itoa(node_id), cur_node_val)
 			node_id++
 
 			nums := v.GetChildrenNum()
@@ -602,11 +581,26 @@ func PrintPlanTreePlot(p *plan.PlanTreeNode) string {
 			}
 			for i := 0; i < nums; i++ {
 				cur_node := v.GetChild(i)
-
-				cur_val := cur_node.FromTableName
-				if strings.Contains(cur_val, "|") {
-					cur_val = cur_node.Type.String()
+				var cur_val string
+				if cur_node.Type == plan.ProjectionType {
+					cur_val = "Proj.["
+					for _, col_ := range cur_node.ColsName {
+						cur_val += col_ + " "
+					}
+					cur_val += "]"
+				} else if cur_node.Type == plan.SelectType {
+					cur_val = "Sel.["
+					for _, cond_ := range cur_node.ConditionsStr {
+						cur_val += cond_ + " "
+					}
+					cur_val += "]"
+				} else {
+					cur_val = cur_node.FromTableName
+					if strings.Contains(cur_val, "|") {
+						cur_val = cur_node.Type.String()
+					}
 				}
+
 				cur_node_graphvis, err := graph.CreateNode(strconv.Itoa(node_id) + "_" + cur_val)
 				node_id++
 
@@ -847,6 +841,23 @@ func GetCondition(expr *ast.BinaryOperationExpr) (ColType, ColType,
 	return left, right, left_attr, right_attr, left_val, right_val, nil
 }
 
+func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
+	left, right, left_attr, right_attr, _, right_val, _ := GetCondition(expr)
+	var left_str string
+	var right_str string
+
+	if left == AttrType && right == ValueType {
+		left_str = left_attr.Name.String()
+		right_str = right_val.GetDatumString() + strconv.Itoa(int(right_val.GetInt64()))
+	} else if left == AttrType && right == AttrType {
+		left_str = left_attr.Name.String()
+		right_str = right_attr.Name.String()
+	} else {
+		fmt.Println("not supported")
+	}
+	return left_str + " " + expr.Op.String() + " " + right_str
+}
+
 func PushDownPredicates(ctx Context, frag_node *plan.PlanTreeNode, where *plan.PlanTreeNode) (err error) {
 	for index_, cond_ := range where.Conditions {
 		expr, ok := cond_.(*ast.BinaryOperationExpr)
@@ -863,6 +874,7 @@ func PushDownPredicates(ctx Context, frag_node *plan.PlanTreeNode, where *plan.P
 			cur_table_name := strings.ToUpper(left_attr.Name.Table.String())
 			if strings.Contains(frag_node.FromTableName, cur_table_name) {
 				frag_node.Conditions = append(frag_node.Conditions, expr)
+				frag_node.ConditionsStr = append(frag_node.ConditionsStr, TransExprNode2Str(expr))
 				fmt.Println("Condition [" + strconv.FormatInt(int64(index_), 10) + "] adds to " + frag_node.FromTableName)
 			}
 
@@ -1401,11 +1413,13 @@ func PredicatePruning(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTree
 	return PrunedNodeName, UnPrunedNodeName, err
 }
 
-func GetJoinSeq(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTreeNode, PrunedNodeName []string) (mapset.Set, error) {
+func GetJoinSeq(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTreeNode, PrunedNodeName []string) ([]string, error) {
 	// join sequence: A = B
 	var err error
-	join_seq := mapset.NewSet()
-	join_table_set := mapset.NewSet()
+	var join_seq []string
+	var join_table_set []string
+	// join_seq := mapset.NewSet()
+	// join_table_set := mapset.NewSet()
 
 	for _, cond_ := range where.Conditions {
 		// join table by the where predicates
@@ -1426,10 +1440,14 @@ func GetJoinSeq(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTreeNode, 
 			}
 			//
 			join_str := l_table + "=" + r_table
-			if !join_seq.Contains(join_str) {
-				join_seq.Add(join_str)
-				join_table_set.Add(l_table)
-				join_table_set.Add(r_table)
+			if FindStr(join_seq, join_str) == -1 {
+				// if !join_seq.Contains(join_str) {
+				// join_seq.Add(join_str)
+				join_seq = append(join_seq, join_str)
+				join_table_set = append(join_table_set, l_table)
+				join_table_set = append(join_table_set, r_table)
+				// join_table_set.Add(l_table)
+				// join_table_set.Add(r_table)
 			}
 		}
 	}
@@ -1437,21 +1455,26 @@ func GetJoinSeq(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTreeNode, 
 	// get join from the remaining table
 	for i := 0; i < from.GetChildrenNum(); i++ {
 		child := from.GetChild(i)
-		if join_table_set.Contains(child.FromTableName) {
+		// if join_table_set.Contains(child.FromTableName) {
+		if FindStr(join_table_set, child.FromTableName) != -1 {
 			continue
 		} else {
 			//
-			iter := join_table_set.Iterator()
-			for elem := range iter.C {
-				cur_head_table := elem.(*string)
-				join_str := *cur_head_table + "=" + child.FromTableName
-				if join_seq.Contains(join_str) {
+			// iter := join_table_set.Iterator()
+			// for elem := range iter.C {
+			for _, elem := range join_table_set {
+				cur_head_table := elem // elem.(*string)
+				join_str := cur_head_table + "=" + child.FromTableName
+
+				if FindStr(join_seq, join_str) != -1 {
+					// if join_seq.Contains(join_str) {
 					return join_seq, errors.New("join_seq.Contains(join_str) should not contain" + join_str)
 				}
-
-				join_seq.Add(join_str)
-				join_table_set.Add(child.FromTableName)
-				iter.Stop()
+				join_seq = append(join_seq, join_str)
+				// join_seq.Add(join_str)
+				join_table_set = append(join_table_set, child.FromTableName)
+				// join_table_set.Add(child.FromTableName)
+				// iter.Stop()
 			}
 		}
 	}
@@ -1514,6 +1537,7 @@ func FindJoinNode(table_name_left string, table_name string, UnPrunedNodeName []
 
 func JoinUsingPruning(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTreeNode,
 	PrunedNodeName []string, UnPrunedNodeName []string) (*plan.PlanTreeNode, error) {
+	//
 
 	var new_joined_node *plan.PlanTreeNode
 	var err error
@@ -1525,9 +1549,10 @@ func JoinUsingPruning(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTree
 		return new_joined_node, err
 	}
 	// join all tables
-	it := join_seq.Iterator()
-	for elem := range it.C {
-		join_str_ := elem.(string)
+	// it := join_seq.Iterator()
+	// for elem := range it.C {
+	for _, elem := range join_seq {
+		join_str_ := elem // .(string)
 		join_strs := strings.Split(join_str_, "=")
 		l_table := strings.Trim(join_strs[0], " ")
 		r_table := strings.Trim(join_strs[1], " ")
@@ -1549,6 +1574,8 @@ func JoinUsingPruning(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTree
 			FromTableName: l_table_node.FromTableName + "|" + r_table_node.FromTableName,
 		}.Init()
 
+		s_whole_right := mapset.NewSet()
+		var r_whole_frag_join_ *plan.PlanTreeNode
 		// start to join one by one
 		for i := 0; i < l_table_node.GetChildrenNum(); i++ {
 			cur_l_frag := *l_table_node.GetChild(i)
@@ -1569,15 +1596,16 @@ func JoinUsingPruning(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTree
 			if is_union_able {
 				//TODO: joinable frags prefer to union or join together first
 				// maybe optimized
-				var r_frags_join_type plan.NodeType
-				r_frags_type := ReturnFragType(ctx, r_table)
-				if strings.EqualFold(r_frags_type, "VERTICAL") {
-					r_frags_join_type = plan.UnionType
-				} else {
-					r_frags_join_type = plan.JoinType
-				}
+				// var r_frags_join_type plan.NodeType
+				// r_frags_type := ReturnFragType(ctx, r_table)
+				// if strings.EqualFold(r_frags_type, "VERTICAL") {
+				// 	r_frags_join_type = plan.UnionType
+				// } else {
+				// 	r_frags_join_type = plan.JoinType
+				// }
 				r_frag_join_ = plan.PlanTreeNode{
-					Type: r_frags_join_type,
+					// Type: r_frags_join_type,
+					Type: plan.UnionType,
 				}.Init()
 			}
 
@@ -1621,10 +1649,37 @@ func JoinUsingPruning(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTree
 					new_join.AddChild(r_frag_join_)
 
 					new_union.AddChild(new_join)
+					// r_frag_join_
+					s_whole_right.Add(r_frag_join_.FromTableName)
+					r_whole_frag_join_ = r_frag_join_
 				}
 			}
 		}
 
+		if s_whole_right.Cardinality() == 1 {
+			// whole right is the same, join together
+			new_union.RemoveAllChild()
+
+			new_union_left := plan.PlanTreeNode{
+				Type:          plan.UnionType,
+				FromTableName: "UnionType",
+			}.Init()
+
+			for i := 0; i < l_table_node.GetChildrenNum(); i++ {
+				cur_l_frag := *l_table_node.GetChild(i)
+				new_union_left.AddChild(&cur_l_frag)
+			}
+
+			new_union_join := plan.PlanTreeNode{
+				Type:          plan.JoinType,
+				FromTableName: "JoinType",
+			}.Init()
+
+			new_union_join.AddChild(new_union_left)
+			new_union_join.AddChild(r_whole_frag_join_)
+
+			new_union.AddChild(new_union_join)
+		}
 		//
 		if index_l > index_r {
 			from.RemoveChild(index_l)
@@ -1638,11 +1693,50 @@ func JoinUsingPruning(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTree
 			// joined successfully
 			from.AddChild(new_union)
 		}
+		// test
+		PrintPlanTreePlot(from)
 	}
 
 	new_joined_node = from
 
 	return new_joined_node, err
+}
+
+func AddProjectionAndSelectionNode(ctx Context, from *plan.PlanTreeNode, node_index_ int, parent *plan.PlanTreeNode) error {
+	var err error
+	if from.GetChildrenNum() == 0 {
+		if from.Type != plan.DataSourceType {
+			err = errors.New("from.Type != plan.DataSourceType ")
+			return err
+		}
+		// frag node
+		select_node := plan.PlanTreeNode{
+			Type:          plan.SelectType,
+			Conditions:    from.Conditions,
+			ConditionsStr: from.ConditionsStr,
+		}.Init()
+
+		proj_node := plan.PlanTreeNode{
+			Type:     plan.ProjectionType,
+			ColsName: from.ColsName,
+		}.Init()
+
+		select_node.SetChildren(proj_node)
+		proj_node.SetChildren(from)
+
+		if parent == nil && parent.GetChildrenNum() < node_index_ {
+			return errors.New("unkown error")
+		}
+		parent.ResetChild(node_index_, select_node)
+	} else {
+		for i := 0; i < from.GetChildrenNum(); i++ {
+			err := AddProjectionAndSelectionNode(ctx, from.GetChild(i), i, from)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
 }
 
 func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *plan.PlanTreeNode, err error) {
@@ -1712,6 +1806,10 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *plan.PlanTreeNode, err e
 		return p, err
 	}
 
+	// err = AddProjectionAndSelectionNode(ctx, new_joined_tree, 0, nil)
+	// if err != nil {
+	// 	return p, err
+	// }
 	PrintPlanTreePlot(new_joined_tree)
 	return p, err
 }
