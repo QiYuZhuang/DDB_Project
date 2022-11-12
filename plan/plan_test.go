@@ -764,7 +764,8 @@ func SplitFragTable_(ctx Context, p *plan.PlanTreeNode) error {
 				FromTableName: site_info.Name,
 			}.Init()
 			_, cols_ := InitFragWithCondition(frags_, site_info.Name)
-			node.ColsName = append(node.ColsName, cols_...)
+			// node.ColsName = append(node.ColsName, cols_...)
+			fmt.Println(cols_)
 			p.AddChild(node)
 		}
 	}
@@ -869,6 +870,112 @@ func PushDownPredicates(ctx Context, frag_node *plan.PlanTreeNode, where *plan.P
 			return errors.New("not support")
 		}
 	}
+	return nil
+}
+
+func GetFragType(ctx Context, frag_name string) (string, error) {
+	var str string
+	var err error
+	//
+	for _, partition := range ctx.partitions.Partitions {
+		if strings.Contains(frag_name, partition.TableName) {
+			str = partition.FragType
+			break
+		}
+	}
+	if len(str) == 0 {
+		err = errors.New("not find frag_name " + frag_name)
+	}
+	return str, err
+}
+
+func PushDownProjections(ctx Context, frag_node *plan.PlanTreeNode, where *plan.PlanTreeNode, proj *plan.PlanTreeNode) (err error) {
+
+	// var frag_projection []string
+
+	frag_projection := mapset.NewSet()
+
+	// add where projection
+	for index_, cond_ := range where.Conditions {
+		expr, ok := cond_.(*ast.BinaryOperationExpr)
+		if !ok {
+			return errors.New("fail to type cast into BinaryOperationExpr")
+		}
+		left, right, left_attr, _, _, _, err := GetCondition(expr)
+		if err != nil {
+			return err
+		}
+		if left == AttrType && right == AttrType {
+			continue
+		} else if left == AttrType && right == ValueType {
+			cur_table_name := strings.ToUpper(left_attr.Name.Table.String())
+			if strings.Contains(frag_node.FromTableName, cur_table_name) {
+				if !frag_projection.Contains(left_attr.Name.Name.String()) {
+					frag_projection.Add(left_attr.Name.Name.String())
+					fmt.Println("ColName from Condition [" + strconv.FormatInt(int64(index_), 10) + "] :" + left_attr.Name.Name.String() + " adds to " + frag_node.FromTableName)
+				}
+			}
+
+		} else {
+			return errors.New("not support")
+		}
+	}
+	// add projection
+	frag_type, err := GetFragType(ctx, frag_node.FromTableName)
+	if err != nil {
+		return err
+	}
+
+	for index_, p_ := range proj.ColsName {
+		table_name := strings.Split(p_, ".")[0]
+		col_name := strings.Split(p_, ".")[1]
+		if !strings.Contains(frag_node.FromTableName, table_name) {
+			continue
+		}
+		col_exists, _ := RetureType(ctx.table_metas, frag_node.FromTableName, col_name)
+		if len(col_exists) > 0 {
+			if !frag_projection.Contains(col_name) {
+				frag_projection.Add(col_name)
+				fmt.Println("ColName [" + strconv.FormatInt(int64(index_), 10) + "]: " + p_ + " adds to " + frag_node.FromTableName)
+			}
+		}
+	}
+
+	if strings.EqualFold(frag_type, "HORIZONTAL") {
+		it := frag_projection.Iterator()
+		for elem := range it.C {
+			frag_node.ColsName = append(frag_node.ColsName, elem.(string))
+		}
+	} else {
+		// already assigned at split-stage, check if `frag_projection` is already satisfied with other vertical frags
+		// TODO: has bug...
+		frag_projection_other := mapset.NewSet()
+		for _, partition := range ctx.partitions.Partitions {
+			if strings.Contains(frag_node.FromTableName, partition.TableName) {
+				for _, frag_ := range partition.VFragInfos {
+					if frag_.SiteName != frag_node.FromTableName {
+						// get other table v-info
+						for _, col_ := range frag_.ColumnName {
+							frag_projection_other.Add(col_)
+						}
+					}
+				}
+			}
+		}
+
+		if frag_projection.Intersect(frag_projection_other).Cardinality() == frag_projection.Cardinality() {
+			// frag_projection_other is much greater
+			frag_node.IsPruned = true
+			fmt.Println("frag_node " + frag_node.FromTableName + " IS PRUNED")
+		} else {
+			//
+			it := frag_projection.Iterator()
+			for elem := range it.C {
+				frag_node.ColsName = append(frag_node.ColsName, elem.(string))
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -1048,7 +1155,8 @@ func FindMainTableNode(ctx Context, from *plan.PlanTreeNode, table_name string) 
 	return index_ret, ret
 }
 
-func SelectionPushDown(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTreeNode) error {
+func SelectionAndProjectionPushDown(ctx Context, from *plan.PlanTreeNode,
+	where *plan.PlanTreeNode, proj *plan.PlanTreeNode) error {
 	// single table predicate pushdown
 	cur_ptr := from
 	for {
@@ -1073,8 +1181,11 @@ func SelectionPushDown(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTre
 					if err != nil {
 						return err
 					}
-
 					err = GetPredicatePruning(ctx, frag_ptr)
+					if err != nil {
+						return err
+					}
+					err = PushDownProjections(ctx, frag_ptr, where, proj)
 					if err != nil {
 						return err
 					}
@@ -1096,6 +1207,11 @@ func SelectionPushDown(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTre
 				}
 
 				err = GetPredicatePruning(ctx, frag_ptr)
+				if err != nil {
+					return err
+				}
+
+				err = PushDownProjections(ctx, frag_ptr, where, proj)
 				if err != nil {
 					return err
 				}
@@ -1262,6 +1378,8 @@ func PredicatePruning(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTree
 					}
 					// add all conditions
 					new_join.Conditions = append(new_join.Conditions, new_cond_join...)
+					//
+					new_join.IsPruned = cur_l_frag.IsPruned || cur_r_frag.IsPruned
 					// check if it can be pruned
 					err = GetPredicatePruning(ctx, new_join)
 					if err != nil {
@@ -1434,7 +1552,6 @@ func JoinUsingPruning(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTree
 		// start to join one by one
 		for i := 0; i < l_table_node.GetChildrenNum(); i++ {
 			cur_l_frag := *l_table_node.GetChild(i)
-
 			// check if can be union
 			s_ := mapset.NewSet()
 			is_union_able := true
@@ -1579,7 +1696,7 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *plan.PlanTreeNode, err e
 
 	fmt.Println(PrintPlanTree(from))
 
-	SelectionPushDown(ctx, from, where)
+	SelectionAndProjectionPushDown(ctx, from, where, proj)
 
 	fmt.Println(PrintPlanTree(from))
 	PrunedNodeName, UnPrunedNodeName, err := PredicatePruning(ctx, from, where)
@@ -1605,7 +1722,7 @@ func buildProjection(ctx Context, fields []*ast.SelectField) (*plan.PlanTreeNode
 		Type: plan.ProjectionType,
 	}.Init()
 	for _, field := range fields {
-		proj.ColsName = append(proj.ColsName, field.Expr.(*ast.ColumnNameExpr).Name.String())
+		proj.ColsName = append(proj.ColsName, strings.ToUpper(field.Expr.(*ast.ColumnNameExpr).Name.String()))
 	}
 	// schema := expression.NewSchema(make([]*expression.Column, 0, len(fields))...)
 
