@@ -859,6 +859,9 @@ func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
 }
 
 func PushDownPredicates(ctx Context, frag_node *plan.PlanTreeNode, where *plan.PlanTreeNode) (err error) {
+	if where == nil {
+		return nil
+	}
 	for index_, cond_ := range where.Conditions {
 		expr, ok := cond_.(*ast.BinaryOperationExpr)
 		if !ok {
@@ -906,84 +909,87 @@ func PushDownProjections(ctx Context, frag_node *plan.PlanTreeNode, where *plan.
 	// var frag_projection []string
 
 	frag_projection := mapset.NewSet()
-
-	// add where projection
-	for index_, cond_ := range where.Conditions {
-		expr, ok := cond_.(*ast.BinaryOperationExpr)
-		if !ok {
-			return errors.New("fail to type cast into BinaryOperationExpr")
-		}
-		left, right, left_attr, _, _, _, err := GetCondition(expr)
-		if err != nil {
-			return err
-		}
-		if left == AttrType && right == AttrType {
-			continue
-		} else if left == AttrType && right == ValueType {
-			cur_table_name := strings.ToUpper(left_attr.Name.Table.String())
-			if strings.Contains(frag_node.FromTableName, cur_table_name) {
-				if !frag_projection.Contains(left_attr.Name.Name.String()) {
-					frag_projection.Add(left_attr.Name.Name.String())
-					fmt.Println("ColName from Condition [" + strconv.FormatInt(int64(index_), 10) + "] :" + left_attr.Name.Name.String() + " adds to " + frag_node.FromTableName)
-				}
+	if where != nil {
+		// add where projection
+		for index_, cond_ := range where.Conditions {
+			expr, ok := cond_.(*ast.BinaryOperationExpr)
+			if !ok {
+				return errors.New("fail to type cast into BinaryOperationExpr")
 			}
+			left, right, left_attr, _, _, _, err := GetCondition(expr)
+			if err != nil {
+				return err
+			}
+			if left == AttrType && right == AttrType {
+				continue
+			} else if left == AttrType && right == ValueType {
+				cur_table_name := strings.ToUpper(left_attr.Name.Table.String())
+				if strings.Contains(frag_node.FromTableName, cur_table_name) {
+					if !frag_projection.Contains(left_attr.Name.Name.String()) {
+						frag_projection.Add(left_attr.Name.Name.String())
+						fmt.Println("ColName from Condition [" + strconv.FormatInt(int64(index_), 10) + "] :" + left_attr.Name.Name.String() + " adds to " + frag_node.FromTableName)
+					}
+				}
 
-		} else {
-			return errors.New("not support")
+			} else {
+				return errors.New("not support")
+			}
 		}
+
 	}
 	// add projection
 	frag_type, err := GetFragType(ctx, frag_node.FromTableName)
 	if err != nil {
 		return err
 	}
-
-	for index_, p_ := range proj.ColsName {
-		table_name := strings.Split(p_, ".")[0]
-		col_name := strings.Split(p_, ".")[1]
-		if !strings.Contains(frag_node.FromTableName, table_name) {
-			continue
-		}
-		col_exists, _ := RetureType(ctx.table_metas, frag_node.FromTableName, col_name)
-		if len(col_exists) > 0 {
-			if !frag_projection.Contains(col_name) {
-				frag_projection.Add(col_name)
-				fmt.Println("ColName [" + strconv.FormatInt(int64(index_), 10) + "]: " + p_ + " adds to " + frag_node.FromTableName)
+	if proj != nil {
+		for index_, p_ := range proj.ColsName {
+			table_name := strings.Split(p_, ".")[0]
+			col_name := strings.Split(p_, ".")[1]
+			if !strings.Contains(frag_node.FromTableName, table_name) {
+				continue
 			}
-		}
-	}
-
-	if strings.EqualFold(frag_type, "HORIZONTAL") {
-		it := frag_projection.Iterator()
-		for elem := range it.C {
-			frag_node.ColsName = append(frag_node.ColsName, elem.(string))
-		}
-	} else {
-		// already assigned at split-stage, check if `frag_projection` is already satisfied with other vertical frags
-		// TODO: has bug...
-		frag_projection_other := mapset.NewSet()
-		for _, partition := range ctx.partitions.Partitions {
-			if strings.Contains(frag_node.FromTableName, partition.TableName) {
-				for _, frag_ := range partition.VFragInfos {
-					if frag_.SiteName != frag_node.FromTableName {
-						// get other table v-info
-						for _, col_ := range frag_.ColumnName {
-							frag_projection_other.Add(col_)
-						}
-					}
+			col_exists, _ := RetureType(ctx.table_metas, frag_node.FromTableName, col_name)
+			if len(col_exists) > 0 {
+				if !frag_projection.Contains(col_name) {
+					frag_projection.Add(col_name)
+					fmt.Println("ColName [" + strconv.FormatInt(int64(index_), 10) + "]: " + p_ + " adds to " + frag_node.FromTableName)
 				}
 			}
 		}
 
-		if frag_projection.Intersect(frag_projection_other).Cardinality() == frag_projection.Cardinality() {
-			// frag_projection_other is much greater
-			frag_node.IsPruned = true
-			fmt.Println("frag_node " + frag_node.FromTableName + " IS PRUNED")
-		} else {
-			//
+		if strings.EqualFold(frag_type, "HORIZONTAL") {
 			it := frag_projection.Iterator()
 			for elem := range it.C {
 				frag_node.ColsName = append(frag_node.ColsName, elem.(string))
+			}
+		} else {
+			// already assigned at split-stage, check if `frag_projection` is already satisfied with other vertical frags
+			// TODO: has bug...
+			frag_projection_other := mapset.NewSet()
+			for _, partition := range ctx.partitions.Partitions {
+				if strings.Contains(frag_node.FromTableName, partition.TableName) {
+					for _, frag_ := range partition.VFragInfos {
+						if frag_.SiteName != frag_node.FromTableName {
+							// get other table v-info
+							for _, col_ := range frag_.ColumnName {
+								frag_projection_other.Add(col_)
+							}
+						}
+					}
+				}
+			}
+
+			if frag_projection.Intersect(frag_projection_other).Cardinality() == frag_projection.Cardinality() {
+				// frag_projection_other is much greater
+				frag_node.IsPruned = true
+				fmt.Println("frag_node " + frag_node.FromTableName + " IS PRUNED")
+			} else {
+				//
+				it := frag_projection.Iterator()
+				for elem := range it.C {
+					frag_node.ColsName = append(frag_node.ColsName, elem.(string))
+				}
 			}
 		}
 	}
@@ -1209,8 +1215,9 @@ func SelectionAndProjectionPushDown(ctx Context, from *plan.PlanTreeNode,
 			// UnionType[ORDERS]
 			// DataSourceType[ORDERS.1] DataSourceType[ORDERS.2] DataSourceType[ORDERS.3]
 			// child_num = cur_ptr.GetChildrenNum()
-			cur_table_ptr := cur_ptr.GetChild(0)
-			frag_num := cur_table_ptr.GetChildrenNum()
+			// cur_table_ptr := cur_ptr.GetChild(0)
+			frag_num := cur_ptr.GetChildrenNum()
+			cur_table_ptr := cur_ptr
 			for j := 0; j < frag_num; j++ {
 				frag_ptr := cur_table_ptr.GetChild(j)
 				err := PushDownPredicates(ctx, frag_ptr, where)
@@ -1333,7 +1340,9 @@ func PredicatePruning(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTree
 	var UnPrunedNodeName []string
 	var err error
 	// var new_joined_node *plan.PlanTreeNode
-
+	if where == nil {
+		return PrunedNodeName, UnPrunedNodeName, err
+	}
 	for _, cond_ := range where.Conditions {
 		// join table by the where predicates
 		expr, ok := cond_.(*ast.BinaryOperationExpr)
@@ -1420,7 +1429,9 @@ func GetJoinSeq(ctx Context, from *plan.PlanTreeNode, where *plan.PlanTreeNode, 
 	var join_table_set []string
 	// join_seq := mapset.NewSet()
 	// join_table_set := mapset.NewSet()
-
+	if where == nil {
+		return join_seq, err
+	}
 	for _, cond_ := range where.Conditions {
 		// join table by the where predicates
 		expr, ok := cond_.(*ast.BinaryOperationExpr)
@@ -1710,24 +1721,40 @@ func AddProjectionAndSelectionNode(ctx Context, from *plan.PlanTreeNode, node_in
 			return err
 		}
 		// frag node
-		select_node := plan.PlanTreeNode{
-			Type:          plan.SelectType,
-			Conditions:    from.Conditions,
-			ConditionsStr: from.ConditionsStr,
-		}.Init()
+		var select_node *plan.PlanTreeNode
+		var proj_node *plan.PlanTreeNode
+		select_node = nil
+		proj_node = nil
 
-		proj_node := plan.PlanTreeNode{
-			Type:     plan.ProjectionType,
-			ColsName: from.ColsName,
-		}.Init()
+		if len(from.ConditionsStr) > 0 {
+			select_node = plan.PlanTreeNode{
+				Type:          plan.SelectType,
+				Conditions:    from.Conditions,
+				ConditionsStr: from.ConditionsStr,
+			}.Init()
+		}
+		if len(from.ColsName) > 0 {
+			proj_node = plan.PlanTreeNode{
+				Type:     plan.ProjectionType,
+				ColsName: from.ColsName,
+			}.Init()
+		}
 
-		select_node.SetChildren(proj_node)
-		proj_node.SetChildren(from)
+		if proj_node != nil {
+			proj_node.SetChildren(from)
+		}
+		if select_node != nil && proj_node != nil {
+			select_node.SetChildren(proj_node)
+		}
 
 		if parent == nil && parent.GetChildrenNum() < node_index_ {
 			return errors.New("unkown error")
 		}
-		parent.ResetChild(node_index_, select_node)
+		if select_node != nil {
+			parent.ResetChild(node_index_, select_node)
+		} else if proj_node != nil {
+			parent.ResetChild(node_index_, proj_node)
+		}
 	} else {
 		for i := 0; i < from.GetChildrenNum(); i++ {
 			err := AddProjectionAndSelectionNode(ctx, from.GetChild(i), i, from)
@@ -1739,6 +1766,40 @@ func AddProjectionAndSelectionNode(ctx Context, from *plan.PlanTreeNode, node_in
 	return err
 }
 
+func unfoldWildStar(ctx Context, fields []*ast.SelectField, from *plan.PlanTreeNode) ([]*ast.SelectField, error) {
+	var ret []*ast.SelectField
+	var err error
+
+	for _, field_ := range fields {
+		if field_.WildCard != nil {
+			table_meta, _, err := FindMetaInfo(ctx, from.GetChild(0).FromTableName)
+			if err != nil {
+				return ret, err
+			}
+
+			for _, col_ := range table_meta.Columns {
+				var new_field ast.SelectField
+				var new_expr ast.ColumnNameExpr
+				var name ast.ColumnName
+
+				name.Name.O = col_.ColumnName
+				name.Table.O = table_meta.TableName
+
+				new_expr.Name = &name
+				new_field.Expr = &new_expr
+
+				ret = append(ret, &new_field)
+			}
+			// fmt.Println(field_.WildCard.Table)
+
+			// from.FromTableName
+		} else {
+			ret = append(ret, field_)
+		}
+	}
+
+	return ret, err
+}
 func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *plan.PlanTreeNode, err error) {
 	// generate Logical Plan tree
 	//            	   Proj.
@@ -1765,7 +1826,7 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *plan.PlanTreeNode, err e
 	}
 	// TODO unfold wildstar in `projection`
 	// originalFields := sel.Fields.Fields
-	// sel.Fields.Fields, err = unfoldWildStar(p, sel.Fields.Fields)
+	sel.Fields.Fields, err = unfoldWildStar(ctx, sel.Fields.Fields, from)
 	if err != nil {
 		return nil, err
 	}
@@ -1777,7 +1838,7 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *plan.PlanTreeNode, err e
 		}
 	}
 
-	proj, err = buildProjection(ctx, sel.Fields.Fields)
+	proj, err = buildProjection(ctx, sel.Fields.Fields, from)
 	if err != nil {
 		return nil, err
 	}
@@ -1806,21 +1867,29 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *plan.PlanTreeNode, err e
 		return p, err
 	}
 
-	// err = AddProjectionAndSelectionNode(ctx, new_joined_tree, 0, nil)
-	// if err != nil {
-	// 	return p, err
-	// }
+	err = AddProjectionAndSelectionNode(ctx, new_joined_tree, 0, nil)
+	if err != nil {
+		return p, err
+	}
 	PrintPlanTreePlot(new_joined_tree)
 	return p, err
 }
 
 // buildProjection returns a Projection plan and non-aux columns length.
-func buildProjection(ctx Context, fields []*ast.SelectField) (*plan.PlanTreeNode, error) {
+func buildProjection(ctx Context, fields []*ast.SelectField, from *plan.PlanTreeNode) (*plan.PlanTreeNode, error) {
 	proj := plan.PlanTreeNode{
 		Type: plan.ProjectionType,
 	}.Init()
 	for _, field := range fields {
-		proj.ColsName = append(proj.ColsName, strings.ToUpper(field.Expr.(*ast.ColumnNameExpr).Name.String()))
+		var proj_name string
+
+		if field.Expr.(*ast.ColumnNameExpr).Name.Table.String() == "" {
+			proj_name = from.GetChild(0).FromTableName + "." + strings.ToUpper(field.Expr.(*ast.ColumnNameExpr).Name.Name.String())
+		} else {
+			proj_name = strings.ToUpper(field.Expr.(*ast.ColumnNameExpr).Name.Table.String()) + "." + strings.ToUpper(field.Expr.(*ast.ColumnNameExpr).Name.Name.String())
+		}
+
+		proj.ColsName = append(proj.ColsName, proj_name)
 	}
 	// schema := expression.NewSchema(make([]*expression.Column, 0, len(fields))...)
 
@@ -2196,17 +2265,61 @@ func TestParseDebug(t *testing.T) {
 		// and Orders.quantity>1
 		// and Publisher.nation='PRC'
 		// `,
-		`select Customer.name, Book.title,   
-		Publisher.name, Orders.quantity 
-		from Customer, Book, Publisher, 
-		Orders 
-		where 
-		Customer.id=Orders.customer_id 
-		and Book.id=Orders.book_id 
-		and Book.publisher_id=Publisher.id 
-		and Customer.id>308000 
-		and Book.copies>100 
-		and Orders.quantity>1 
+
+		// 1
+		// `select *
+		// from Customer`,
+
+		// 2
+		// `select Publisher.name
+		// from Publisher`,
+
+		// 3
+		// `select Book.title
+		// from Book
+		// where copies>5000`,
+		// `select customer_id, quantity from Orders
+		// where quantity < 8`,
+		// `select Book.title,Book.copies,  Publisher.name,Publisher.nation
+		// from Book,Publisher
+		// where Book.publisher_id=Publisher.id
+		// and Publisher.nation='USA'
+		// and Book.copies > 1000`,
+		// `select Customer.name,Orders.quantity
+		// from Customer,Orders
+		// where Customer.id=Orders.customer_id`, // wrong
+		// `select Customer.name,Customer.rank, Orders.quantity
+		// from Customer,Orders
+		// where Customer.id=Orders.customer_id
+		// and Customer.rank=1`, // wrong projection pushdown
+		// `select Customer.name ,Orders.quantity, Book.title
+		// from Customer,Orders,Book
+		// where Customer.id=Orders.customer_id
+		// and Book.id=Orders.book_id
+		// and Customer.rank=1
+		// and Book.copies>5000`, // wrong
+
+		// ` select Customer.name, Book.title, Publisher.name, Orders.quantity
+		// from Customer, Book, Publisher, Orders
+		// where Customer.id=Orders.customer_id
+		// and Book.id=Orders.book_id
+		// and Book.publisher_id=Publisher.id
+		// and Book.id>220000
+		// and Publisher.nation='USA'
+		// and Orders.quantity>1`, // wrong
+
+		// 10
+		`select Customer.name, Book.title,
+		Publisher.name, Orders.quantity
+		from Customer, Book, Publisher,
+		Orders
+		where
+		Customer.id=Orders.customer_id
+		and Book.id=Orders.book_id
+		and Book.publisher_id=Publisher.id
+		and Customer.id>308000
+		and Book.copies>100
+		and Orders.quantity>1
 		and Publisher.nation='PRC'`,
 	}
 
