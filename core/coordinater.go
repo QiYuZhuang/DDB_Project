@@ -3,8 +3,11 @@ package core
 import (
 	"bufio"
 	"container/list"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	cfg "project/config"
@@ -16,29 +19,35 @@ import (
 const MaxPeerNum = 10
 
 type Coordinator struct {
-	id                int16
-	peers             [MaxPeerNum]Peer
-	InputSockets      [MaxPeerNum]net.Conn
-	DispatcherSockets [MaxPeerNum]net.Conn
-	InputMessages     [MaxPeerNum]list.List
-	DispatchMessages  [MaxPeerNum]list.List
-	context           *cfg.Context
+	Id                  int16
+	Peer_num            int16
+	Peers               [MaxPeerNum]Peer
+	InputSockets        [MaxPeerNum]net.Conn
+	DispatcherSockets   [MaxPeerNum]net.Conn
+	InputMessages       [MaxPeerNum]list.List
+	DispatchMessages    [MaxPeerNum]list.List
+	Context             *cfg.Context
+	table_metas         TableMetas
+	partitions          Partitions
+	GlobalTransactionId uint64
+	ActiveTransactions  map[uint64]*Transaction
 
 	d_mutex sync.Mutex
+	t_mutex sync.Mutex // for global_transaction_id
 	// i_mutex sync.Mutex
 }
 
 type Peer struct {
-	id   int16
-	ip   string
+	Id   int16
+	Ip   string
 	port string
 }
 
-func (c *Coordinator) find_peers(filename string) {
-	l := c.context.Logger
+func (c *Coordinator) FindPeers(filename string) {
+	l := c.Context.Logger
 	str, _ := os.Getwd()
 	l.Infoln("temp path is", str)
-	file, err := os.OpenFile(c.context.Peer_file, os.O_RDWR, 0666)
+	file, err := os.OpenFile(c.Context.Peer_file, os.O_RDWR, 0666)
 	if err != nil {
 		l.Fatalln("Open file error!", err)
 		return
@@ -62,30 +71,58 @@ func (c *Coordinator) find_peers(filename string) {
 		if line[0] != '[' {
 			l.Debugln(line)
 			arr := strings.Fields(line)
-			if arr[0] == c.context.DB_host {
-				c.id = machine_id
+			if arr[0] == c.Context.DB_host {
+				c.Id = machine_id
 			}
 			p := Peer{
-				id:   machine_id,
-				ip:   arr[0],
+				Id:   machine_id,
+				Ip:   arr[0],
 				port: arr[1],
 			}
-			c.peers[machine_id] = p
+			c.Peers[machine_id] = p
+			machine_id++
 		}
-		machine_id++
 	}
+	c.Peer_num = machine_id
 }
 
 func NewCoordinator(ctx *cfg.Context) *Coordinator {
 	c := Coordinator{}
-	c.context = ctx
-	c.find_peers(ctx.Peer_file)
+	c.Context = ctx
+	c.FindPeers(ctx.Peer_file)
 
+	// TODO:
+	jsonFileDir := "config/partition.json"
+	jsonFile, err := os.Open(jsonFileDir)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("Successfully Opened users.json")
+	byteValue, _ := ioutil.ReadAll(jsonFile)
+	jsonFile.Close()
+	json.Unmarshal([]byte(byteValue), &c.partitions)
+	fmt.Println(c.partitions)
+	////
+
+	// read table meta info
+	jsonFileDir = "config/table_meta.json"
+	jsonFile, err = os.Open(jsonFileDir)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("Successfully Opened users.json")
+
+	byteValue, _ = ioutil.ReadAll(jsonFile)
+	jsonFile.Close()
+	json.Unmarshal([]byte(byteValue), &c.table_metas)
+	fmt.Println(c.table_metas)
+
+	c.ActiveTransactions = make(map[uint64]*Transaction)
 	return &c
 }
 
 func (c *Coordinator) connect_to_peers() {
-	l := c.context.Logger
+	l := c.Context.Logger
 	// init message list
 	// c.DispatchMessages = new([]list.List)
 	// c.InputMessages = new([]list.List)
@@ -101,7 +138,7 @@ func (c *Coordinator) connect_to_peers() {
 }
 
 func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
-	l := c.context.Logger
+	l := c.Context.Logger
 	buf := make([]byte, 4096)
 	defer conn.Close()
 	for {
@@ -112,14 +149,58 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			break
 		}
 		l.Debugln("sql:", n)
-		panic("handle sql, not implement now")
+		// panic("handle sql, not implement now")
+		// parser_tree := parser(buf)
+
+		// 创建新事务
+		txn := NewTransaction(string(buf), c)
+		_, sqls, err := ParseAndExecute(c, string(buf[:n]))
+		if err != nil {
+			l.Errorln(err.Error())
+		}
+
+		// plan-tree
+		// var sqls []SqlRouter
+		txn.Participants = make([]string, len(sqls))
+		txn.Results = make([]sql.Result, len(sqls))
+		txn.Responses = make([]bool, len(sqls))
+		for i, s := range sqls {
+			m := c.NewQueryRequestMessage(s, txn)
+			id := FlushMessage(c, m)
+			if id == -1 {
+				l.Error("can not send to ip:", s.Site_ip)
+			} else if id == int(c.Id) {
+				go LocalExecSql(i, txn, s.Sql, c)
+			} else {
+				c.DispatchMessages[id].PushBack(*m)
+			}
+			txn.Participants[i] = s.Site_ip
+			txn.Results[i] = nil
+			txn.Responses[i] = false
+		}
+
+		// wait
+		// result = plan_tree_root->execute(c, )
+		// ---- insert -> ip / sql
+		// ---- select -> execute_tree
+		for i := 0; i < len(sqls); i++ {
+			l.Infoln("wait for response for subquery id(%d), expect response from %s", sqls[i].Sql, sqls[i].Site_ip)
+			for !txn.Responses[i] {
+				time.Sleep(time.Duration(1) * time.Nanosecond)
+			}
+		}
+
+		// response
+		response := "ok"
+		conn.Write([]byte(response))
+		delete(c.ActiveTransactions, txn.TxnId)
 	}
 }
 
 func (c *Coordinator) wait_for_local_connection() {
-	l := c.context.Logger
+	l := c.Context.Logger
 	port := "10900"
-	address := fmt.Sprintf("%s:%s", c.context.DB_host, port)
+	address := fmt.Sprintf("%s:%s", c.Context.DB_host, port)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		l.Error("client listen failed.", err)
@@ -141,3 +222,15 @@ func (c *Coordinator) Start() {
 	// create a goroutine, which listen to local connection
 	c.wait_for_local_connection()
 }
+
+// func (c *Coordinator) BroadcastToPeers(sql string, peers []string) {
+// 	for _, p := range peers {
+// 		for _, pp := range c.peers {
+// 			if pp.ip == p {
+// 				message := c.NewQueryRequestMessage(new plan.SqlRouter{
+
+// 				})
+// 			}
+// 		}
+// 	}
+// }

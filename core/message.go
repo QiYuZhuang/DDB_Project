@@ -1,10 +1,9 @@
 package core
 
 import (
+	"database/sql"
+	"errors"
 	"time"
-
-	cfg "project/config"
-	p "project/plan"
 )
 
 type MessageType uint32
@@ -26,14 +25,15 @@ type Message struct {
 	Length  uint32        `json:"length"`
 	Src     string        `json:"src_machine_id"`
 	Dst     string        `json:"dest_machine_id"`
-	TxnId   uint32        `json:"txn_id"`
+	TxnId   uint64        `json:"txn_id"`
 	QueryId uint16        `json:"query_id"`
 	Query   string        `json:"query"`
-	Result  interface{}   `json:"result"`
+	Result  sql.Result    `json:"result"`
 	Time    time.Duration `json:"time"`
+	Error   bool          `json:"error"`
 }
 
-func NewMessage(t MessageType, src string, dst string, txn_id uint32) *Message {
+func NewMessage(t MessageType, src string, dst string, txn_id uint64) *Message {
 	return &Message{
 		Type:  t,
 		Src:   src,
@@ -42,39 +42,81 @@ func NewMessage(t MessageType, src string, dst string, txn_id uint32) *Message {
 	}
 }
 
-func (m Message) MessageHandler(ctx *cfg.Context) {
-	l := ctx.Logger
+func (m Message) MessageHandler(c *Coordinator) error {
+	l := c.Context.Logger
 
+	var err error
+	err = nil
 	switch m.Type {
 	case QueryRequest:
-		m.QueryRequestHandler(ctx)
+		err = m.QueryRequestHandler(c)
 	case QueryResponse:
-		m.QueryResponseHandler(ctx)
+		err = m.QueryResponseHandler(c)
 	case HeartBeat:
-		m.HeartBeatHandler(ctx)
+		err = m.HeartBeatHandler(c)
 	case HeartBeatAck:
-		m.HeartBeatAckHandler(ctx)
+		err = m.HeartBeatAckHandler(c)
 	default:
 		l.Errorln("Unsupport message type, message", m)
 	}
+	return err
 }
 
-func (m Message) QueryRequestHandler(ctx *cfg.Context) {
+func FlushAndPush(msg *Message, c *Coordinator) error {
+	idx := FlushMessage(c, msg)
+	if idx == -1 {
+		return errors.New("can not find ip" + msg.Dst)
+	}
+	c.DispatchMessages[idx].PushBack(*msg)
+	return nil
+}
+
+func (m Message) QueryRequestHandler(c *Coordinator) error {
 	// sql := m.Query
 	// run (sql, src, txn_id)
+	l := c.Context.Logger
+	l.Infoln("query is ", m.Query)
+	res, err := c.Context.DB.Exec(m.Query)
+	resp := NewMessage(QueryResponse, m.Dst, m.Src, m.TxnId)
+	if err != nil {
+		// fmt.Println("exec failed, ", err)
+		resp.SetError(true)
+		FlushAndPush(resp, c)
+		return errors.New("query request handler failed")
+	}
+	resp.SetResult(res)
+	FlushAndPush(resp, c)
+	return nil
 }
 
-func (m Message) QueryResponseHandler(ctx *cfg.Context) {
+func (m Message) QueryResponseHandler(c *Coordinator) error {
 	// move result to specific variable, according to txn_id and query_id
 	// trigger a check (if remote queries in the executor are already, join the results and go to next)
+	l := c.Context.Logger
+	txn, ok := c.ActiveTransactions[uint64(m.TxnId)]
+	if ok {
+		for id, part := range txn.Participants {
+			if part == m.Src {
+				txn.Results[id] = m.Result
+				txn.Responses[id] = true
+				return nil
+			}
+		}
+		l.Errorln("not a vaild sub query result")
+	} else {
+		l.Errorln("can not find active transcation, id is ", txn.TxnId)
+	}
+	return errors.New("query response handler failed")
 }
 
-func (m Message) HeartBeatHandler(ctx *cfg.Context) {
+func (m Message) HeartBeatHandler(c *Coordinator) error {
 	// no-use
+	return nil
 }
 
-func (m Message) HeartBeatAckHandler(ctx *cfg.Context) {
+func (m Message) HeartBeatAckHandler(c *Coordinator) error {
 	// no-use
+	return nil
 }
 
 func (m *Message) SetMessageLength(size uint32) {
@@ -90,13 +132,17 @@ func (m *Message) SetQueryId(query_id uint16) {
 }
 
 // TODO: have no idea now
-func (m *Message) SetResult() {
-
+func (m *Message) SetResult(res sql.Result) {
+	m.Result = res
 }
 
-func (c *Coordinator) NewQueryRequestMessage(router p.SqlRouter) *Message {
+func (m *Message) SetError(is_error bool) {
+	m.Error = is_error
+}
+
+func (c *Coordinator) NewQueryRequestMessage(router SqlRouter, txn *Transaction) *Message {
 	// router
-	message := NewMessage(QueryRequest, c.context.DB_host, router.Site_ip, 0)
+	message := NewMessage(QueryRequest, c.Context.DB_host, router.Site_ip, txn.TxnId)
 	message.SetQuery(router.Sql)
 	message.SetMessageLength(0)
 	return message

@@ -24,6 +24,7 @@ func main() {
 	mysql.SQLDriverInit(&ctx)
 	// start coordinator <worker, socket_input, socket_dispatcher>
 	c := core.NewCoordinator(&ctx)
+
 	c.Start()
 	// wait for terminal
 }

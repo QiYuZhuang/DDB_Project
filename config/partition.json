@@ -2,31 +2,92 @@
 {
     "patitions": [
         {
-            "table_name": "publisher",
+            "table_name": "PUBLISHER",
             "site_info": [
                 {
-                    "frag_name": "Publisher.1",
+                    "frag_name": "PUBLISHER_1",
                     "ip": "10.77.110.145"
                 },
                 {
-                    "frag_name": "Publisher.2",
+                    "frag_name": "PUBLISHER_2",
+                    "ip": "10.77.110.146"
+                },
+                {
+                    "frag_name": "PUBLISHER_3",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "PUBLISHER_4",
                     "ip": "10.77.110.146"
                 }
             ], 
             "fragmentation_type": "horizontal", 
             "horizontal_fragmentation": [
                 {
-                    "key": "id",
+                    "frag_name": "PUBLISHER_1",
                     "range": [
                         {
-                            "frag_name": "Publisher.1",
-                            "gt": "0", 
-                            "lt": "104000"
+                            "col_name" : "ID",
+                            "get" : "0",
+                            "lt" : "104000",
+                            "eq" : ""
                         },
                         {
-                            "frag_name": "Publisher.2",
-                            "gt" : "104000",
-                            "lt" : "999999"
+                            "col_name" : "NATION",
+                            "get" : "",
+                            "lt" : "",
+                            "eq":  "PRC"
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "PUBLISHER_2",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "0",
+                            "lt" : "104000",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "NATION",
+                            "get" : "",
+                            "lt" : "",
+                            "eq":  "USA"
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "PUBLISHER_3",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "104000",
+                            "lt" : "",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "NATION",
+                            "get" : "",
+                            "lt" : "",
+                            "eq":  "PRC"
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "PUBLISHER_4",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "104000",
+                            "lt" : "",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "NATION",
+                            "get" : "",
+                            "lt" : "",
+                            "eq":  "USA"
                         }
                     ]
                 }
@@ -35,15 +96,15 @@
         },
 
         {
-            "table_name": "customer",
+            "table_name": "CUSTOMER",
 
             "site_info": [
                 {
-                    "frag_name": "Customer.1",
+                    "frag_name": "CUSTOMER_1",
                     "ip": "10.77.110.145"
                 },
                 {
-                    "frag_name": "Customer.2",
+                    "frag_name": "CUSTOMER_2",
                     "ip": "10.77.110.146"
                 }
             ], 
@@ -51,12 +112,12 @@
             "horizontal_fragmentation": [],
             "vertical_fragmentation":[
                 {
-                    "frag_name": "Customer.1",
-                    "col_names": ["id", "name"]
+                    "frag_name": "CUSTOMER_1",
+                    "col_names": ["ID", "NAME"]
                 },
                 {
-                    "frag_name": "Customer.2",
-                    "col_names": ["id", "rank"]
+                    "frag_name": "CUSTOMER_2",
+                    "col_names": ["ID", "RANK_"]
                 }
             ]
         }
