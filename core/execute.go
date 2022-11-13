@@ -2,6 +2,7 @@ package core
 
 import (
 	cfg "project/config"
+	"project/meta"
 )
 
 type Executor struct {
@@ -14,7 +15,7 @@ func NewExecutor(c *Coordinator) *Executor {
 	}
 }
 
-func LocalExecSql(sql_id int, txn *Transaction, sql string, c *Coordinator) {
+func LocalExecSql(sql_id int, txn *meta.Transaction, sql string, c *Coordinator) {
 	l := c.Context.Logger
 	// active_trans := c.ActiveTransactions
 	db := c.Context.DB

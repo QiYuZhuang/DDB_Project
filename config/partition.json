@@ -120,6 +120,155 @@
                     "col_names": ["ID", "RANK_"]
                 }
             ]
+        },
+
+        {
+            "table_name": "ORDERS",
+            "site_info": [
+                {
+                    "frag_name": "ORDERS.1",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "ORDERS.2",
+                    "ip": "10.77.110.146"
+                },
+                {
+                    "frag_name": "ORDERS.3",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "ORDERS.4",
+                    "ip": "10.77.110.146"
+                }
+            ], 
+            "fragmentation_type": "horizontal", 
+            "horizontal_fragmentation": [
+                {
+                    "frag_name": "ORDERS.1",
+                    "range": [
+                        {
+                            "col_name" : "CUSTOMER_ID",
+                            "get" : "",
+                            "lt" : "307000",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "BOOK_ID",
+                            "get" : "",
+                            "lt" : "215000",
+                            "eq":  ""
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "ORDERS.2",
+                    "range": [
+                        {
+                            "col_name" : "CUSTOMER_ID",
+                            "get" : "",
+                            "lt" : "307000",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "BOOK_ID",
+                            "get" : "215000",
+                            "lt" : "",
+                            "eq":  ""
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "ORDERS.3",
+                    "range": [
+                        {
+                            "col_name" : "CUSTOMER_ID",
+                            "get" : "307000",
+                            "lt" : "",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "BOOK_ID",
+                            "get" : "",
+                            "lt" : "215000",
+                            "eq":  ""
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "ORDERS.4",
+                    "range": [
+                        {
+                            "col_name" : "CUSTOMER_ID",
+                            "get" : "307000",
+                            "lt" : "",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "BOOK_ID",
+                            "get" : "215000",
+                            "lt" : "",
+                            "eq":  ""
+                        }
+                    ]
+                }
+            ],
+            "vertical_fragmentation":[]
+        },
+
+        {
+            "table_name": "BOOK",
+            "site_info": [
+                {
+                    "frag_name": "BOOK.1",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "BOOK.2",
+                    "ip": "10.77.110.146"
+                },
+                {
+                    "frag_name": "BOOK.3",
+                    "ip": "10.77.110.145"
+                }
+            ], 
+            "fragmentation_type": "horizontal", 
+            "horizontal_fragmentation": [
+                {
+                    "frag_name": "BOOK.1",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "",
+                            "lt" : "205000",
+                            "eq" : ""
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "BOOK.2",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "205000",
+                            "lt" : "210000",
+                            "eq" : ""
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "BOOK.3",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "210000",
+                            "lt" : "",
+                            "eq" : ""
+                        }
+                    ]
+                }
+            ],
+            "vertical_fragmentation":[]
         }
     ]
 }

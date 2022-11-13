@@ -11,8 +11,11 @@ import (
 	"net"
 	"os"
 	cfg "project/config"
-	"strings"
+	"project/meta"
+	"project/plan"
 	"sync"
+
+	"strings"
 	"time"
 )
 
@@ -21,26 +24,20 @@ const MaxPeerNum = 10
 type Coordinator struct {
 	Id                  int16
 	Peer_num            int16
-	Peers               [MaxPeerNum]Peer
+	Peers               [MaxPeerNum]meta.Peer
 	InputSockets        [MaxPeerNum]net.Conn
 	DispatcherSockets   [MaxPeerNum]net.Conn
 	InputMessages       [MaxPeerNum]list.List
 	DispatchMessages    [MaxPeerNum]list.List
 	Context             *cfg.Context
-	table_metas         TableMetas
-	partitions          Partitions
+	TableMetas          meta.TableMetas
+	Partitions          meta.Partitions
 	GlobalTransactionId uint64
-	ActiveTransactions  map[uint64]*Transaction
+	ActiveTransactions  map[uint64]*meta.Transaction
 
 	d_mutex sync.Mutex
 	t_mutex sync.Mutex // for global_transaction_id
 	// i_mutex sync.Mutex
-}
-
-type Peer struct {
-	Id   int16
-	Ip   string
-	port string
 }
 
 func (c *Coordinator) FindPeers(filename string) {
@@ -74,10 +71,10 @@ func (c *Coordinator) FindPeers(filename string) {
 			if arr[0] == c.Context.DB_host {
 				c.Id = machine_id
 			}
-			p := Peer{
+			p := meta.Peer{
 				Id:   machine_id,
 				Ip:   arr[0],
-				port: arr[1],
+				Port: arr[1],
 			}
 			c.Peers[machine_id] = p
 			machine_id++
@@ -100,8 +97,8 @@ func NewCoordinator(ctx *cfg.Context) *Coordinator {
 	fmt.Println("Successfully Opened users.json")
 	byteValue, _ := ioutil.ReadAll(jsonFile)
 	jsonFile.Close()
-	json.Unmarshal([]byte(byteValue), &c.partitions)
-	fmt.Println(c.partitions)
+	json.Unmarshal([]byte(byteValue), &c.Partitions)
+	fmt.Println(c.Partitions)
 	////
 
 	// read table meta info
@@ -114,10 +111,10 @@ func NewCoordinator(ctx *cfg.Context) *Coordinator {
 
 	byteValue, _ = ioutil.ReadAll(jsonFile)
 	jsonFile.Close()
-	json.Unmarshal([]byte(byteValue), &c.table_metas)
-	fmt.Println(c.table_metas)
+	json.Unmarshal([]byte(byteValue), &c.TableMetas)
+	fmt.Println(c.TableMetas)
 
-	c.ActiveTransactions = make(map[uint64]*Transaction)
+	c.ActiveTransactions = make(map[uint64]*meta.Transaction)
 	return &c
 }
 
@@ -154,7 +151,12 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 
 		// 创建新事务
 		txn := NewTransaction(string(buf), c)
-		_, sqls, err := ParseAndExecute(c, string(buf[:n]))
+		ctx := plan.Context{
+			TableMetas:      c.TableMetas,
+			TablePartitions: c.Partitions,
+			Peers:           c.Peers[:],
+		}
+		_, sqls, err := plan.ParseAndExecute(ctx, string(buf[:n]))
 		if err != nil {
 			l.Errorln(err.Error())
 		}

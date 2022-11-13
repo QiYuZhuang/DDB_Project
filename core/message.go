@@ -3,6 +3,7 @@ package core
 import (
 	"database/sql"
 	"errors"
+	"project/meta"
 	"time"
 )
 
@@ -140,7 +141,7 @@ func (m *Message) SetError(is_error bool) {
 	m.Error = is_error
 }
 
-func (c *Coordinator) NewQueryRequestMessage(router SqlRouter, txn *Transaction) *Message {
+func (c *Coordinator) NewQueryRequestMessage(router meta.SqlRouter, txn *meta.Transaction) *Message {
 	// router
 	message := NewMessage(QueryRequest, c.Context.DB_host, router.Site_ip, txn.TxnId)
 	message.SetQuery(router.Sql)
