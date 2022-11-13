@@ -89,6 +89,7 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 }
 
 func SplitFragTable_(ctx Context, p *PlanTreeNode) error {
+	//
 	var frags_ meta.Partition
 	var err error
 	is_find_ := false
@@ -112,6 +113,8 @@ func SplitFragTable_(ctx Context, p *PlanTreeNode) error {
 			node := PlanTreeNode{
 				Type:          DataSourceType,
 				FromTableName: site_info.Name,
+				ExecuteSiteIP: site_info.IP,
+				DestSiteIP:    ctx.IP,
 			}.Init()
 			//
 			conds_, _ := InitFragWithCondition(frags_, site_info.Name)
@@ -123,6 +126,8 @@ func SplitFragTable_(ctx Context, p *PlanTreeNode) error {
 			node := PlanTreeNode{
 				Type:          DataSourceType,
 				FromTableName: site_info.Name,
+				ExecuteSiteIP: site_info.IP,
+				DestSiteIP:    ctx.IP,
 			}.Init()
 			_, cols_ := InitFragWithCondition(frags_, site_info.Name)
 			// node.ColsName = append(node.ColsName, cols_...)
@@ -907,12 +912,16 @@ func AddProjectionAndSelectionNode(ctx Context, from *PlanTreeNode, node_index_ 
 				Type:          SelectType,
 				Conditions:    from.Conditions,
 				ConditionsStr: from.ConditionsStr,
+				ExecuteSiteIP: from.ExecuteSiteIP,
+				DestSiteIP:    from.DestSiteIP,
 			}.Init()
 		}
 		if len(from.ColsName) > 0 {
 			proj_node = PlanTreeNode{
-				Type:     ProjectionType,
-				ColsName: from.ColsName,
+				Type:          ProjectionType,
+				ColsName:      from.ColsName,
+				ExecuteSiteIP: from.ExecuteSiteIP,
+				DestSiteIP:    from.DestSiteIP,
 			}.Init()
 		}
 

@@ -19,16 +19,16 @@ import (
 	"time"
 )
 
-const MaxPeerNum = 10
+const MaxPeerNum_ = 10
 
 type Coordinator struct {
 	Id                  int16
 	Peer_num            int16
-	Peers               [MaxPeerNum]meta.Peer
-	InputSockets        [MaxPeerNum]net.Conn
-	DispatcherSockets   [MaxPeerNum]net.Conn
-	InputMessages       [MaxPeerNum]list.List
-	DispatchMessages    [MaxPeerNum]list.List
+	Peers               [MaxPeerNum_]meta.Peer
+	InputSockets        [MaxPeerNum_]net.Conn
+	DispatcherSockets   [MaxPeerNum_]net.Conn
+	InputMessages       [MaxPeerNum_]list.List
+	DispatchMessages    [MaxPeerNum_]list.List
 	Context             *cfg.Context
 	TableMetas          meta.TableMetas
 	Partitions          meta.Partitions

@@ -125,6 +125,7 @@ type Context struct {
 	TableMetas      meta.TableMetas
 	TablePartitions meta.Partitions
 	Peers           []meta.Peer
+	IP              string
 }
 
 type DataRange struct {
@@ -298,6 +299,46 @@ func PrintPlanTree(p *PlanTreeNode) string {
 	return result
 }
 
+func OptimizeTransmission(ctx Context, p *PlanTreeNode) {
+	// TODO
+	// direct send to current sql
+	node_id := 0
+	if p == nil {
+		return
+	}
+	//新建一个队列
+	queue := []*PlanTreeNode{p}
+
+	i := 0
+	for len(queue) > 0 {
+		//新建临时队列，用于重新给queue赋值
+		temp := []*PlanTreeNode{}
+		//新建每一行的一维数组
+
+		for _, v := range queue {
+			node_id++
+
+			nums := v.GetChildrenNum()
+			if nums == 0 {
+				continue
+			}
+			for i := 0; i < nums; i++ {
+				cur_node := v.GetChild(i)
+				if cur_node.Type == JoinType || cur_node.Type == UnionType {
+					cur_node.ExecuteSiteIP = ctx.IP
+					cur_node.DestSiteIP = ctx.IP
+				}
+
+				temp = append(temp, cur_node)
+			}
+		}
+		i++
+		//二叉树新的一行的节点放入队列中
+		queue = temp
+	}
+	return
+}
+
 func PrintPlanTreePlot(p *PlanTreeNode) string {
 	edge_id := 0
 	node_id := 0
@@ -449,7 +490,7 @@ func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
 	return left_str + " " + expr.Op.String() + " " + right_str
 }
 
-func ParseAndExecute(ctx Context, sql_str string) (PlanTreeNode, []meta.SqlRouter, error) {
+func ParseAndExecute(ctx Context, sql_str string) (*PlanTreeNode, []meta.SqlRouter, error) {
 	var p *PlanTreeNode
 	var ret []meta.SqlRouter
 	var err error
@@ -497,5 +538,5 @@ func ParseAndExecute(ctx Context, sql_str string) (PlanTreeNode, []meta.SqlRoute
 	if err != nil {
 		fmt.Println(err)
 	}
-	return *p, ret, err
+	return p, ret, err
 }

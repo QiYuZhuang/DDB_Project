@@ -216,8 +216,7 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *PlanTreeNode, err error)
 	} else {
 		return nil, errors.New("can not parse sql without from")
 	}
-	// TODO unfold wildstar in `projection`
-	// originalFields := sel.Fields.Fields
+
 	sel.Fields.Fields, err = unfoldWildStar(ctx, sel.Fields.Fields, from)
 	if err != nil {
 		return nil, err
@@ -263,6 +262,8 @@ func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *PlanTreeNode, err error)
 	if err != nil {
 		return p, err
 	}
-	PrintPlanTreePlot(new_joined_tree)
-	return p, err
+
+	OptimizeTransmission(ctx, new_joined_tree)
+
+	return new_joined_tree, err
 }
