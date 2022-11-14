@@ -8,6 +8,7 @@ import (
 	"os"
 	cfg "project/config"
 	utils "project/utils"
+	"strings"
 )
 
 func main() {
@@ -35,6 +36,12 @@ func main() {
 			log.Fatalln("read error", err.Error())
 			break
 		}
+		// fmt.Println(input)
+		if strings.Contains(strings.ToLower(input), "exit") ||
+			strings.Contains(strings.ToLower(input), "quit") {
+			fmt.Println("Bye.")
+			break
+		}
 
 		_, err = conn.Write([]byte(input))
 		if err != nil {
@@ -43,7 +50,11 @@ func main() {
 		}
 		// wait_for_res
 		buf := make([]byte, 1024)
-		conn.Read(buf)
-		fmt.Println(buf)
+		n, err := conn.Read(buf)
+		if err != nil {
+			log.Fatalln("read error")
+		}
+
+		fmt.Println(buf[:n])
 	}
 }
