@@ -30,4 +30,5 @@ func LocalExecSql(sql_id int, txn *meta.Transaction, sql string, c *Coordinator)
 		l.Errorln("local exec failed. err: ", err.Error())
 	}
 	txn.Results[sql_id] = res
+	txn.Responses[sql_id] = true
 }

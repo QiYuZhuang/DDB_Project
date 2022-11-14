@@ -126,26 +126,26 @@
             "table_name": "ORDERS",
             "site_info": [
                 {
-                    "frag_name": "ORDERS.1",
+                    "frag_name": "ORDERS_1",
                     "ip": "10.77.110.145"
                 },
                 {
-                    "frag_name": "ORDERS.2",
+                    "frag_name": "ORDERS_2",
                     "ip": "10.77.110.146"
                 },
                 {
-                    "frag_name": "ORDERS.3",
+                    "frag_name": "ORDERS_3",
                     "ip": "10.77.110.145"
                 },
                 {
-                    "frag_name": "ORDERS.4",
+                    "frag_name": "ORDERS_4",
                     "ip": "10.77.110.146"
                 }
             ], 
             "fragmentation_type": "horizontal", 
             "horizontal_fragmentation": [
                 {
-                    "frag_name": "ORDERS.1",
+                    "frag_name": "ORDERS_1",
                     "range": [
                         {
                             "col_name" : "CUSTOMER_ID",
@@ -162,7 +162,7 @@
                     ]
                 },
                 {
-                    "frag_name": "ORDERS.2",
+                    "frag_name": "ORDERS_2",
                     "range": [
                         {
                             "col_name" : "CUSTOMER_ID",
@@ -179,7 +179,7 @@
                     ]
                 },
                 {
-                    "frag_name": "ORDERS.3",
+                    "frag_name": "ORDERS_3",
                     "range": [
                         {
                             "col_name" : "CUSTOMER_ID",
@@ -196,7 +196,7 @@
                     ]
                 },
                 {
-                    "frag_name": "ORDERS.4",
+                    "frag_name": "ORDERS_4",
                     "range": [
                         {
                             "col_name" : "CUSTOMER_ID",
@@ -220,22 +220,22 @@
             "table_name": "BOOK",
             "site_info": [
                 {
-                    "frag_name": "BOOK.1",
+                    "frag_name": "BOOK_1",
                     "ip": "10.77.110.145"
                 },
                 {
-                    "frag_name": "BOOK.2",
+                    "frag_name": "BOOK_2",
                     "ip": "10.77.110.146"
                 },
                 {
-                    "frag_name": "BOOK.3",
+                    "frag_name": "BOOK_3",
                     "ip": "10.77.110.145"
                 }
             ], 
             "fragmentation_type": "horizontal", 
             "horizontal_fragmentation": [
                 {
-                    "frag_name": "BOOK.1",
+                    "frag_name": "BOOK_1",
                     "range": [
                         {
                             "col_name" : "ID",
@@ -246,7 +246,7 @@
                     ]
                 },
                 {
-                    "frag_name": "BOOK.2",
+                    "frag_name": "BOOK_2",
                     "range": [
                         {
                             "col_name" : "ID",
@@ -257,7 +257,7 @@
                     ]
                 },
                 {
-                    "frag_name": "BOOK.3",
+                    "frag_name": "BOOK_3",
                     "range": [
                         {
                             "col_name" : "ID",

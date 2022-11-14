@@ -167,7 +167,7 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 		txn.Results = make([]sql.Result, len(sqls))
 		txn.Responses = make([]bool, len(sqls))
 		for i, s := range sqls {
-			m := c.NewQueryRequestMessage(s, txn)
+			m := c.NewQueryRequestMessage(uint16(i), s, txn)
 			id := FlushMessage(c, m)
 			if id == -1 {
 				l.Error("can not send to ip:", s.Site_ip)
@@ -186,7 +186,7 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 		// ---- insert -> ip / sql
 		// ---- select -> execute_tree
 		for i := 0; i < len(sqls); i++ {
-			l.Infoln("wait for response for subquery id(%d), expect response from %s", sqls[i].Sql, sqls[i].Site_ip)
+			l.Infoln("wait for response for subquery id(%v), expect response from %s", sqls[i].Sql, sqls[i].Site_ip)
 			for !txn.Responses[i] {
 				time.Sleep(time.Duration(1) * time.Nanosecond)
 			}

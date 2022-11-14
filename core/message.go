@@ -79,6 +79,7 @@ func (m Message) QueryRequestHandler(c *Coordinator) error {
 	l.Infoln("query is ", m.Query)
 	res, err := c.Context.DB.Exec(m.Query)
 	resp := NewMessage(QueryResponse, m.Dst, m.Src, m.TxnId)
+	resp.SetQueryId(m.QueryId)
 	if err != nil {
 		// fmt.Println("exec failed, ", err)
 		resp.SetError(true)
@@ -96,14 +97,16 @@ func (m Message) QueryResponseHandler(c *Coordinator) error {
 	l := c.Context.Logger
 	txn, ok := c.ActiveTransactions[uint64(m.TxnId)]
 	if ok {
-		for id, part := range txn.Participants {
-			if part == m.Src {
-				txn.Results[id] = m.Result
-				txn.Responses[id] = true
-				return nil
-			}
-		}
-		l.Errorln("not a vaild sub query result")
+		// for id, part := range txn.Participants {
+		// 	if part == m.Src {
+		// 		txn.Results[id] = m.Result
+		// 		txn.Responses[id] = true
+		// 		return nil
+		// 	}
+		// }
+		txn.Results[m.QueryId] = m.Result
+		txn.Responses[m.QueryId] = true
+		return nil
 	} else {
 		l.Errorln("can not find active transcation, id is ", txn.TxnId)
 	}
@@ -141,10 +144,11 @@ func (m *Message) SetError(is_error bool) {
 	m.Error = is_error
 }
 
-func (c *Coordinator) NewQueryRequestMessage(router meta.SqlRouter, txn *meta.Transaction) *Message {
+func (c *Coordinator) NewQueryRequestMessage(query_id uint16, router meta.SqlRouter, txn *meta.Transaction) *Message {
 	// router
 	message := NewMessage(QueryRequest, c.Context.DB_host, router.Site_ip, txn.TxnId)
 	message.SetQuery(router.Sql)
+	message.SetQueryId(query_id)
 	message.SetMessageLength(0)
 	return message
 }
