@@ -151,7 +151,7 @@ func GenInsertSQL(insert_requests []InsertRequest) ([]meta.SqlRouter, error) {
 	return ret, err
 }
 
-func HandleInsert(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
+func HandleInsert(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
 	// router the insert sql to partitioned site
 	// Horizontal fragmentation only
 	// only consider one fragmentation condition
@@ -182,7 +182,7 @@ func HandleInsert(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
 	return ret, err
 }
 
-func HandleDelete(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
+func HandleDelete(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
 	// router the delete sql to partitioned site
 	// Horizontal fragmentation only
 	// only consider one fragmentation condition
@@ -220,7 +220,7 @@ func HandleDelete(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
 	return ret, err
 }
 
-func BroadcastSQL(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
+func BroadcastSQL(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
 	var ret []meta.SqlRouter
 	sql := stmt.Text()
 	fmt.Println(sql)

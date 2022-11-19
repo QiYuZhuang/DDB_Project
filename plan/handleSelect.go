@@ -3,6 +3,7 @@ package plan
 import (
 	"errors"
 	"fmt"
+	"project/meta"
 	"strings"
 
 	"github.com/pingcap/tidb/parser/ast"
@@ -10,7 +11,7 @@ import (
 	"github.com/pingcap/tidb/parser/opcode"
 )
 
-func unfoldWildStar(ctx Context, fields []*ast.SelectField, from *PlanTreeNode) ([]*ast.SelectField, error) {
+func unfoldWildStar(ctx meta.Context, fields []*ast.SelectField, from *PlanTreeNode) ([]*ast.SelectField, error) {
 	var ret []*ast.SelectField
 	var err error
 
@@ -46,7 +47,7 @@ func unfoldWildStar(ctx Context, fields []*ast.SelectField, from *PlanTreeNode) 
 }
 
 // buildProjection returns a Projection plan and non-aux columns length.
-func buildProjection(ctx Context, fields []*ast.SelectField, from *PlanTreeNode) (*PlanTreeNode, error) {
+func buildProjection(ctx meta.Context, fields []*ast.SelectField, from *PlanTreeNode) (*PlanTreeNode, error) {
 	proj := PlanTreeNode{
 		Type: ProjectionType,
 	}.Init()
@@ -87,7 +88,7 @@ func splitWhere(where ast.ExprNode) []ast.ExprNode {
 	return conditions
 }
 
-func buildSelection(ctx Context, where ast.ExprNode) (*PlanTreeNode, error) {
+func buildSelection(ctx meta.Context, where ast.ExprNode) (*PlanTreeNode, error) {
 
 	conditions := splitWhere(where)
 	// expressions := make([]expression.Expression, 0, len(conditions))
@@ -100,7 +101,7 @@ func buildSelection(ctx Context, where ast.ExprNode) (*PlanTreeNode, error) {
 	return selection, nil
 }
 
-func buildJoin(ctx Context, joinNode *ast.Join) (*PlanTreeNode, error) {
+func buildJoin(ctx meta.Context, joinNode *ast.Join) (*PlanTreeNode, error) {
 
 	//新建一个队列
 	queue := []*ast.Join{joinNode}
@@ -156,7 +157,7 @@ func buildJoin(ctx Context, joinNode *ast.Join) (*PlanTreeNode, error) {
 	return joinPlan, nil
 }
 
-func buildDataSource(ctx Context, tn *ast.TableName) (*PlanTreeNode, error) {
+func buildDataSource(ctx meta.Context, tn *ast.TableName) (*PlanTreeNode, error) {
 	// dbName := tn.Schema
 	// TODO check table in this db
 	// tbl, err := b.is.TableByName(dbName, tn.Name)
@@ -172,7 +173,7 @@ func buildDataSource(ctx Context, tn *ast.TableName) (*PlanTreeNode, error) {
 	return result, nil
 }
 
-func buildResultSetNode(ctx Context, node ast.ResultSetNode) (p *PlanTreeNode, err error) {
+func buildResultSetNode(ctx meta.Context, node ast.ResultSetNode) (p *PlanTreeNode, err error) {
 	switch x := node.(type) {
 	case *ast.Join:
 		return buildJoin(ctx, x)
@@ -192,7 +193,7 @@ func buildResultSetNode(ctx Context, node ast.ResultSetNode) (p *PlanTreeNode, e
 	}
 }
 
-func HandleSelect(ctx Context, sel *ast.SelectStmt) (p *PlanTreeNode, err error) {
+func HandleSelect(ctx meta.Context, sel *ast.SelectStmt) (p *PlanTreeNode, err error) {
 	// generate Logical Plan tree
 	//            	   Proj.
 	//                  |

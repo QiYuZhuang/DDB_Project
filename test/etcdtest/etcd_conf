@@ -1,0 +1,48 @@
+TOKEN=token-01
+CLUSTER_STATE=new
+NAME_1=machine-1
+NAME_2=machine-2
+NAME_3=machine-3
+HOST_1=10.77.110.145
+HOST_2=10.77.110.146
+HOST_3=10.77.110.148
+CLUSTER=${NAME_1}=http://${HOST_1}:2280,${NAME_2}=http://${HOST_2}:2280,${NAME_3}=http://${HOST_3}:2280
+
+
+# For machine 1
+THIS_NAME=${NAME_1}
+THIS_IP=${HOST_1}
+./etcd --data-dir=data.etcd --name ${THIS_NAME} \
+	--initial-advertise-peer-urls http://${THIS_IP}:2280 --listen-peer-urls http://${THIS_IP}:2280 \
+	--advertise-client-urls http://${THIS_IP}:2279 --listen-client-urls http://${THIS_IP}:2279 \
+	--initial-cluster ${CLUSTER} \
+	--initial-cluster-state ${CLUSTER_STATE} --initial-cluster-token ${TOKEN}
+
+# For machine 2
+THIS_NAME=${NAME_2}
+THIS_IP=${HOST_2}
+./etcd --data-dir=data.etcd --name ${THIS_NAME} \
+	--initial-advertise-peer-urls http://${THIS_IP}:2280 --listen-peer-urls http://${THIS_IP}:2280 \
+	--advertise-client-urls http://${THIS_IP}:2279 --listen-client-urls http://${THIS_IP}:2279 \
+	--initial-cluster ${CLUSTER} \
+	--initial-cluster-state ${CLUSTER_STATE} --initial-cluster-token ${TOKEN}
+
+# For machine 3
+THIS_NAME=${NAME_3}
+THIS_IP=${HOST_3}
+./etcd --data-dir=data.etcd --name ${THIS_NAME} \
+	--initial-advertise-peer-urls http://${THIS_IP}:2280 --listen-peer-urls http://${THIS_IP}:2280 \
+	--advertise-client-urls http://${THIS_IP}:2279 --listen-client-urls http://${THIS_IP}:2279 \
+	--initial-cluster ${CLUSTER} \
+	--initial-cluster-state ${CLUSTER_STATE} --initial-cluster-token ${TOKEN}
+
+
+export ETCDCTL_API=3
+HOST_1=10.77.110.145
+HOST_2=10.77.110.146
+HOST_3=10.77.110.148
+ENDPOINTS=$HOST_1:2279,$HOST_2:2279,$HOST_3:2279
+ 
+./etcdctl --endpoints=$ENDPOINTS member list
+
+

@@ -121,13 +121,6 @@ type InsertValue struct {
 	Val     string
 }
 
-type Context struct {
-	TableMetas      meta.TableMetas
-	TablePartitions meta.Partitions
-	Peers           []meta.Peer
-	IP              string
-}
-
 type DataRange struct {
 	FieldType string
 	LValueStr string
@@ -145,7 +138,7 @@ const (
 	ValueType ColType = 2
 )
 
-func FindMetaInfo(ctx Context, tablename string) (meta.TableMeta, meta.Partition, error) {
+func FindMetaInfo(ctx meta.Context, tablename string) (meta.TableMeta, meta.Partition, error) {
 	var table_meta meta.TableMeta
 	var partition_meta meta.Partition
 	var err error
@@ -159,7 +152,7 @@ func FindMetaInfo(ctx Context, tablename string) (meta.TableMeta, meta.Partition
 		}
 	}
 	if !is_find_ {
-		err = errors.New("fail to find " + tablename + " in current database")
+		err = errors.New("fail to find table" + tablename + " in current database")
 		return table_meta, partition_meta, err
 	}
 	// find PartitionMetaData
@@ -183,7 +176,7 @@ func SwapNode(a *PlanTreeNode, b *PlanTreeNode) {
 	*b = tem
 }
 
-func ReturnFragType(ctx Context, table_name string) string {
+func ReturnFragType(ctx meta.Context, table_name string) string {
 	var ret string
 	for _, partition := range ctx.TablePartitions.Partitions {
 		if strings.EqualFold(partition.TableName, table_name) {
@@ -195,7 +188,7 @@ func ReturnFragType(ctx Context, table_name string) string {
 	return ret
 }
 
-func FindMainTableNode(ctx Context, from *PlanTreeNode, table_name string) (int, *PlanTreeNode) {
+func FindMainTableNode(ctx meta.Context, from *PlanTreeNode, table_name string) (int, *PlanTreeNode) {
 	var ret *PlanTreeNode
 	ret = nil
 	index_ret := -1
@@ -239,7 +232,7 @@ func RetureType(table_metas meta.TableMetas, table_name string, col_name string)
 	return "", errors.New("not find this col" + col_name + table_name)
 }
 
-func GetFragType(ctx Context, frag_name string) (string, error) {
+func GetFragType(ctx meta.Context, frag_name string) (string, error) {
 	var str string
 	var err error
 	//
@@ -299,7 +292,7 @@ func PrintPlanTree(p *PlanTreeNode) string {
 	return result
 }
 
-func OptimizeTransmission(ctx Context, p *PlanTreeNode) {
+func OptimizeTransmission(ctx meta.Context, p *PlanTreeNode) {
 	// TODO
 	// direct send to current sql
 	node_id := 0
@@ -490,7 +483,7 @@ func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
 	return left_str + " " + expr.Op.String() + " " + right_str
 }
 
-func ParseAndExecute(ctx Context, sql_str string) (*PlanTreeNode, []meta.SqlRouter, error) {
+func ParseAndExecute(ctx meta.Context, sql_str string) (*PlanTreeNode, []meta.SqlRouter, error) {
 	var p *PlanTreeNode
 	var ret []meta.SqlRouter
 	var err error
@@ -504,14 +497,15 @@ func ParseAndExecute(ctx Context, sql_str string) (*PlanTreeNode, []meta.SqlRout
 	fmt.Println(sql_str)
 	if strings.Contains(sql_str, "PARTITION") {
 		sql_str = strings.Replace(sql_str, " ", "", -1)
-		_, err := HandlePartitionSQL(sql_str)
+		_, err := HandlePartitionSQL(ctx, sql_str)
 		if err != nil {
 			fmt.Println(err)
 		}
 	} else {
 		stmt, err1 := my_parser.ParseOneStmt(sql_str, "", "")
 		if err1 != nil {
-			fmt.Println(err)
+			fmt.Println(err1)
+			return p, ret, err1
 		}
 
 		// Otherwise do something with stmt
@@ -531,7 +525,7 @@ func ParseAndExecute(ctx Context, sql_str string) (*PlanTreeNode, []meta.SqlRout
 			fmt.Println("delete") // same as delete
 			ret, err = HandleDelete(ctx, x)
 		default:
-			// createdb, dropdb, create table, drop table, all broadcast
+			// createdb, dropdb, all broadcast
 			ret, err = BroadcastSQL(ctx, x)
 		}
 	}

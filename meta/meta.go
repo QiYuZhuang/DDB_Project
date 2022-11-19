@@ -60,3 +60,11 @@ type Peer struct {
 	Ip   string
 	Port string
 }
+
+type Context struct {
+	TableMetas      TableMetas
+	TablePartitions Partitions
+	Peers           []Peer
+	IP              string
+	IsDebugLocal    bool
+}
