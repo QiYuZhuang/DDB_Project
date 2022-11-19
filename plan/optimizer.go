@@ -88,7 +88,7 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 	return conds_, cols_
 }
 
-func SplitFragTable_(ctx Context, p *PlanTreeNode) error {
+func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
 	//
 	var frags_ meta.Partition
 	var err error
@@ -138,7 +138,7 @@ func SplitFragTable_(ctx Context, p *PlanTreeNode) error {
 	return nil
 }
 
-func SplitFragTable(ctx Context, p *PlanTreeNode) {
+func SplitFragTable(ctx meta.Context, p *PlanTreeNode) {
 	nums := p.GetChildrenNum()
 	for i := 0; i < nums; i++ {
 		child_ := p.GetChild(i)
@@ -151,7 +151,7 @@ func SplitFragTable(ctx Context, p *PlanTreeNode) {
 	}
 }
 
-func PushDownPredicates(ctx Context, frag_node *PlanTreeNode, where *PlanTreeNode) (err error) {
+func PushDownPredicates(ctx meta.Context, frag_node *PlanTreeNode, where *PlanTreeNode) (err error) {
 	if where == nil {
 		return nil
 	}
@@ -181,7 +181,7 @@ func PushDownPredicates(ctx Context, frag_node *PlanTreeNode, where *PlanTreeNod
 	return nil
 }
 
-func PushDownProjections(ctx Context, frag_node *PlanTreeNode, where *PlanTreeNode, proj *PlanTreeNode) (err error) {
+func PushDownProjections(ctx meta.Context, frag_node *PlanTreeNode, where *PlanTreeNode, proj *PlanTreeNode) (err error) {
 
 	// var frag_projection []string
 
@@ -274,7 +274,7 @@ func PushDownProjections(ctx Context, frag_node *PlanTreeNode, where *PlanTreeNo
 	return nil
 }
 
-func GetPredicatePruning(ctx Context, frag_node *PlanTreeNode) error {
+func GetPredicatePruning(ctx meta.Context, frag_node *PlanTreeNode) error {
 	// get single table pruned
 	condition_range := make(map[string]DataRange)
 
@@ -397,7 +397,7 @@ func GetPredicatePruning(ctx Context, frag_node *PlanTreeNode) error {
 	return nil
 }
 
-func SelectionAndProjectionPushDown(ctx Context, from *PlanTreeNode,
+func SelectionAndProjectionPushDown(ctx meta.Context, from *PlanTreeNode,
 	where *PlanTreeNode, proj *PlanTreeNode) error {
 	// single table predicate pushdown
 	cur_ptr := from
@@ -526,7 +526,7 @@ func AddJoinCondition(join_cond_expr *ast.BinaryOperationExpr, new_join *PlanTre
 	return ret, err
 }
 
-func PredicatePruning(ctx Context, from *PlanTreeNode, where *PlanTreeNode) ([]string, []string, error) {
+func PredicatePruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode) ([]string, []string, error) {
 	// PlanTreeNode,
 	var PrunedNodeName []string
 	var UnPrunedNodeName []string
@@ -614,7 +614,7 @@ func PredicatePruning(ctx Context, from *PlanTreeNode, where *PlanTreeNode) ([]s
 	return PrunedNodeName, UnPrunedNodeName, err
 }
 
-func GetJoinSeq(ctx Context, from *PlanTreeNode, where *PlanTreeNode, PrunedNodeName []string) ([]string, error) {
+func GetJoinSeq(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode, PrunedNodeName []string) ([]string, error) {
 	// join sequence: A = B
 	var err error
 	var join_seq []string
@@ -727,12 +727,14 @@ func FindJoinNode(table_name_left string, table_name string, UnPrunedNodeName []
 	return res
 }
 
-func JoinUsingPruning(ctx Context, from *PlanTreeNode, where *PlanTreeNode,
+func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 	PrunedNodeName []string, UnPrunedNodeName []string) (*PlanTreeNode, error) {
 	//
 
 	var new_joined_node *PlanTreeNode
 	var err error
+
+	PrintPlanTreePlot(from)
 
 	// join sequence: A = B
 	// where condition first
@@ -894,7 +896,7 @@ func JoinUsingPruning(ctx Context, from *PlanTreeNode, where *PlanTreeNode,
 	return new_joined_node, err
 }
 
-func AddProjectionAndSelectionNode(ctx Context, from *PlanTreeNode, node_index_ int, parent *PlanTreeNode) error {
+func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_index_ int, parent *PlanTreeNode) error {
 	var err error
 	if from.GetChildrenNum() == 0 {
 		if from.Type != DataSourceType {

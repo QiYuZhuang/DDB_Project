@@ -151,10 +151,11 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 
 		// 创建新事务
 		txn := NewTransaction(string(buf), c)
-		ctx := plan.Context{
+		ctx := meta.Context{
 			TableMetas:      c.TableMetas,
 			TablePartitions: c.Partitions,
 			Peers:           c.Peers[:],
+			IsDebugLocal:    false,
 		}
 		_, sqls, err := plan.ParseAndExecute(ctx, string(buf[:n]))
 		if err != nil {

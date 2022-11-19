@@ -7,10 +7,28 @@ import (
 	"project/utils"
 	"strings"
 
+	"project/etcd"
+
 	"github.com/pingcap/tidb/parser/ast"
 )
 
-func HandleCreateTable(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
+func new_col_(create_col string) (meta.Column, error) {
+	var new_col meta.Column
+	var err error
+
+	name_type_ := strings.Split(strings.Trim(create_col, " "), " ")
+	new_col.ColumnName = name_type_[0]
+	if strings.Contains(name_type_[1], "INT") {
+		new_col.Type = "int"
+	} else if strings.Contains(name_type_[1], "CHAR") {
+		new_col.Type = "string"
+	} else {
+		err = errors.New("todo type")
+	}
+	return new_col, err
+}
+
+func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
 	// router the create table sql to partitioned site
 	// Horizontal fragmentation only
 	// only consider one fragmentation condition
@@ -26,10 +44,25 @@ func HandleCreateTable(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error)
 	create_cols := strings.Split(utils.GetMidStr(sel.Text(), "(", ")"), ",")
 
 	// find meta
-	table_meta, partition_meta, err := FindMetaInfo(ctx, tablename)
+	_, partition_meta, err := FindMetaInfo(ctx, tablename)
 	if err != nil {
-		return ret, err
+		if strings.Contains(err.Error(), "fail to find table") {
+			err = nil
+		} else {
+			return ret, err
+		}
 	}
+
+	var table_meta meta.TableMeta
+	table_meta.TableName = tablename
+	// type TableMeta struct {
+	// 	TableName string   `json:"table_name"`
+	// 	Columns   []Column `json:"columns"`
+	// }
+	// type Column struct {
+	// 	ColumnName string `json:"col_name"`
+	// 	Type       string `json:"type"`
+	// }
 	if strings.EqualFold(partition_meta.FragType, "HORIZONTAL") {
 		// directly replace table NAME
 		for frag_index := range partition_meta.HFragInfos {
@@ -37,9 +70,18 @@ func HandleCreateTable(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error)
 			var sql_router_ meta.SqlRouter
 			sql_router_.Site_ip = partition_meta.SiteInfos[frag_index].IP
 			sql_router_.Sql = sql
-			sql_router_.Sql = strings.Replace(sql_router_.Sql, table_meta.TableName, site_name_, 1)
+			sql_router_.Sql = strings.Replace(sql_router_.Sql, tablename, site_name_, 1)
 			ret = append(ret, sql_router_)
 		}
+
+		for _, create_col := range create_cols {
+			new_col, err := new_col_(create_col)
+			if err != nil {
+				return ret, err
+			}
+			table_meta.Columns = append(table_meta.Columns, new_col)
+		}
+
 	} else {
 		// vertical fragment
 		for frag_index_, frag_ := range partition_meta.VFragInfos {
@@ -58,15 +100,23 @@ func HandleCreateTable(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error)
 				}
 				//
 				if is_find_ {
+
 					covered_frag_col += 1
 					if len(col_sql_str) > 0 {
 						col_sql_str += ", "
 					}
 					col_sql_str += create_col
+
+					new_col, err := new_col_(create_col)
+					if err != nil {
+						return ret, err
+					}
+					table_meta.Columns = append(table_meta.Columns, new_col)
 				}
 			}
+
 			if covered_frag_col != len(frag_.ColumnName) {
-				err = errors.New("Dont cover all cols in frag " + frag_.SiteName + " in table " + table_meta.TableName)
+				err = errors.New("Dont cover all cols in frag " + frag_.SiteName + " in table " + tablename)
 				break
 			}
 			per.Site_ip = partition_meta.SiteInfos[frag_index_].IP
@@ -76,10 +126,21 @@ func HandleCreateTable(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error)
 	}
 
 	fmt.Println(tablename)
+
+	if !ctx.IsDebugLocal {
+		// 把table_meta存入etcd
+		err = etcd.SaveTabletoEtcd(table_meta)
+	}
+
+	if err != nil {
+		fmt.Println("save data to etcd error")
+		return ret, err
+	}
+
 	return ret, err
 }
 
-func HandleDropTable(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
+func HandleDropTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
 	// router the create table sql to partitioned site
 	// Horizontal fragmentation only
 	// only consider one fragmentation condition
@@ -97,7 +158,16 @@ func HandleDropTable(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
 	if err != nil {
 		return ret, err
 	}
-	//
+
+	if !ctx.IsDebugLocal {
+		//drop datameta from etcd
+		err = etcd.DropTablefromEtcd(tablename)
+	}
+	if err != nil {
+		fmt.Println("handle drop table error")
+		return ret, err
+	}
+
 	for _, site_info := range partition_meta.SiteInfos {
 		site_name_ := site_info.Name
 		var sql_router_ meta.SqlRouter
@@ -111,7 +181,7 @@ func HandleDropTable(ctx Context, stmt ast.StmtNode) ([]meta.SqlRouter, error) {
 	return ret, err
 }
 
-func HandlePartitionSQL(sql_str string) (meta.Partition, error) {
+func HandlePartitionSQL(ctx meta.Context, sql_str string) (meta.Partition, error) {
 	// type Partition struct {
 	// 	TableName  string      `json:"table_name"`
 	// 	SiteInfos  []SiteInfo  `json:"site_info"`
@@ -229,5 +299,15 @@ func HandlePartitionSQL(sql_str string) (meta.Partition, error) {
 		}
 	}
 	fmt.Println(partition)
+
+	if !ctx.IsDebugLocal {
+		//将partition存到etcd中
+		saveerr := etcd.SaveFragmenttoEtcd(partition)
+		if saveerr != nil {
+			fmt.Println("save partition to etcd error")
+			return partition, saveerr
+		}
+	}
+
 	return partition, err
 }
