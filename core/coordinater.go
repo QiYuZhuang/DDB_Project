@@ -3,7 +3,6 @@ package core
 import (
 	"bufio"
 	"container/list"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,25 +12,12 @@ import (
 	cfg "project/config"
 	"project/meta"
 	"project/plan"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const MaxPeerNum_ = 10
-
-type Publish struct {
-	Id     int32
-	Name   string
-	Nation string
-}
-
-func (p *Publish) ToString() string {
-	var s string = ""
-	s = s + strconv.Itoa(int(p.Id)) + "|" + p.Name + "|" + p.Nation + "\n"
-	return s
-}
 
 type Coordinator struct {
 	Id                  int16
@@ -183,8 +169,8 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 		}
 		// var sqls []SqlRouter
 		txn.Participants = make([]string, len(sqls))
-		txn.Results = make([]sql.Result, len(sqls))
-		txn.Rows = make([]*sql.Rows, len(sqls))
+		// txn.Results = make([]sql.Result, len(sqls))
+		txn.QueryResult = make([]meta.QueryResults, len(sqls))
 		txn.Responses = make([]bool, len(sqls))
 
 		for i, s := range sqls {
@@ -198,8 +184,8 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 				c.DispatchMessages[id].PushBack(*m)
 			}
 			txn.Participants[i] = s.Site_ip
-			txn.Results[i] = nil
-			txn.Rows[i] = nil
+			// txn.Results[i] = nil
+			// txn.Rows[i] = nil
 			txn.Responses[i] = false
 		}
 
@@ -214,30 +200,33 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			}
 		}
 
-		_, partition_meta, err := plan.FindMetaInfo(ctx, tableName)
+		partition_meta, err := plan.GetPartitionMeta(ctx, tableName)
+		if err != nil {
+			l.Error("xxx")
+		}
 
-		var Output []Publish
-		if partition_meta.FragType == "HORIZONTAL" { //水平划分
-			for i := 0; i < len(txn.Rows); i++ {
-				var curRow = txn.Rows[i]
-				for curRow.Next() {
-					var data Publish
-					err := curRow.Scan(&data.Id, &data.Name, &data.Name)
-					if err != nil {
-						l.Error(err)
-						break
-					} else {
-						Output = append(Output, data)
-					}
-				}
-			}
+		var Output []meta.Publish
+		if strings.EqualFold(partition_meta.PartitionType, "HORIZONTAL") { //水平划分
+			// for i := 0; i < len(txn.Rows); i++ {
+			// 	var curRow = txn.Rows[i]
+			// 	for curRow.Next() {
+			// 		var data meta.Publish
+			// 		err := curRow.Scan(&data.Id, &data.Name, &data.Name)
+			// 		if err != nil {
+			// 			l.Error(err)
+			// 			break
+			// 		} else {
+			// 			Output = append(Output, data)
+			// 		}
+			// 	}
+			// }
 		} else { //垂直划分
 
-			for i := 0; i < len(txn.Rows); i++ {
-				var curRow = txn.Rows[i]
-				if curRow.Next() {
+			for i := 0; i < len(txn.QueryResult); i++ {
+				// var curRow = txn.QueryResult[i]
+				// if curRow.Next() {
 
-				}
+				// }
 			}
 
 		}

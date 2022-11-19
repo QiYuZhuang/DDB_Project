@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"project/meta"
 	utils "project/utils"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -896,6 +897,131 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 	return new_joined_node, err
 }
 
+type PartitionInfo struct {
+	PartitionType string
+	HFrag         meta.HFragInfo
+	VFrag         meta.VFragInfo
+}
+
+func GetPartitionMeta(ctx meta.Context, frag_name string) (PartitionInfo, error) {
+	//
+	var partition_meta meta.Partition
+	var err error
+	var ret PartitionInfo
+
+	table_name := strings.Split(frag_name, "_")[0]
+
+	_, partition_meta, err = FindMetaInfo(ctx, table_name)
+	if err != nil {
+		return ret, err
+	}
+	ret.PartitionType = partition_meta.FragType
+
+	if strings.EqualFold(ret.PartitionType, "HORIZONTAL") {
+		//
+		for _, partition_ := range partition_meta.HFragInfos {
+			if strings.EqualFold(partition_.FragName, frag_name) {
+				ret.HFrag = partition_
+				break
+			}
+		}
+	} else {
+		// Vertical
+		for _, partition_ := range partition_meta.VFragInfos {
+			if strings.EqualFold(partition_.SiteName, frag_name) {
+				ret.VFrag = partition_
+				break
+			}
+		}
+	}
+	return ret, err
+}
+
+func filterCondition(partition_info PartitionInfo, from *PlanTreeNode) ([]ast.ExprNode, []string) {
+	// filter condition
+	var condition_ []ast.ExprNode
+	var condition_str_ []string
+
+	if strings.EqualFold(partition_info.PartitionType, "VERTICAL") {
+		for i_, cond_ := range from.Conditions {
+			is_in_ := true
+
+			expr, ok := cond_.(*ast.BinaryOperationExpr)
+			if !ok {
+				fmt.Println("ERROR expr, ok := cond_.(*ast.BinaryOperationExpr)")
+				break
+			}
+			//
+			left, right, left_attr, right_attr, _, _, err := GetCondition(expr)
+			if err != nil {
+				fmt.Println("ERROR filterCondition")
+				break
+			}
+			if left == AttrType {
+				is_find_ := false
+				for _, cur_col := range partition_info.VFrag.ColumnName {
+					if strings.EqualFold(cur_col, left_attr.Name.Name.String()) {
+						is_find_ = true
+						break
+					}
+				}
+				if !is_find_ {
+					is_in_ = false
+				}
+			}
+
+			if right == AttrType {
+				is_find_ := false
+				for _, cur_col := range partition_info.VFrag.ColumnName {
+					if strings.EqualFold(cur_col, right_attr.Name.Name.String()) {
+						is_find_ = true
+						break
+					}
+				}
+				if !is_find_ {
+					is_in_ = false
+				}
+			}
+
+			if is_in_ {
+				condition_ = append(condition_, from.Conditions[i_])
+				condition_str_ = append(condition_str_, from.ConditionsStr[i_])
+			}
+		}
+	} else {
+		condition_ = from.Conditions
+		condition_str_ = from.ConditionsStr
+	}
+	sort.Strings(from.ConditionsStr)
+	//
+	return condition_, condition_str_
+}
+
+func filterColumns(partition_info PartitionInfo, from *PlanTreeNode) []string {
+	// filter columns
+	var colsName []string
+
+	if strings.EqualFold(partition_info.PartitionType, "VERTICAL") {
+		for i_, cur_cond := range from.ColsName {
+			is_in_ := false
+			for _, col := range partition_info.VFrag.ColumnName {
+				if col == cur_cond {
+					is_in_ = true
+					break
+				}
+			}
+			if is_in_ {
+				colsName = append(colsName, from.ColsName[i_])
+			}
+		}
+	} else {
+		colsName = from.ColsName
+	}
+	sort.Strings(colsName)
+	//
+	return colsName
+}
+
 func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_index_ int, parent *PlanTreeNode) error {
 	var err error
 	if from.GetChildrenNum() == 0 {
@@ -909,7 +1035,18 @@ func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_in
 		select_node = nil
 		proj_node = nil
 
+		if err != nil {
+			return err
+		}
+
+		partition_info, err := GetPartitionMeta(ctx, from.FromTableName)
+		if err != nil {
+			return err
+		}
+
 		if len(from.ConditionsStr) > 0 {
+			from.Conditions, from.ConditionsStr = filterCondition(partition_info, from)
+
 			select_node = PlanTreeNode{
 				Type:          SelectType,
 				Conditions:    from.Conditions,
@@ -919,6 +1056,8 @@ func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_in
 			}.Init()
 		}
 		if len(from.ColsName) > 0 {
+			from.ColsName = filterColumns(partition_info, from)
+
 			proj_node = PlanTreeNode{
 				Type:          ProjectionType,
 				ColsName:      from.ColsName,

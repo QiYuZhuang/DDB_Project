@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"project/meta"
+	"project/mysql"
 	"strings"
 	"time"
 )
@@ -23,17 +24,18 @@ const (
  * TxnId is the identify of the query(out of order)
  */
 type Message struct {
-	Type    MessageType   `json:"type"`
-	Length  uint32        `json:"length"`
-	Src     string        `json:"src_machine_id"`
-	Dst     string        `json:"dest_machine_id"`
-	TxnId   uint64        `json:"txn_id"`
-	QueryId uint16        `json:"query_id"`
-	Query   string        `json:"query"`
-	Result  sql.Result    `json:"result"`
-	Rows    *sql.Rows     `json:"rows"`
-	Time    time.Duration `json:"time"`
-	Error   bool          `json:"error"`
+	Type    MessageType `json:"type"`
+	Length  uint32      `json:"length"`
+	Src     string      `json:"src_machine_id"`
+	Dst     string      `json:"dest_machine_id"`
+	TxnId   uint64      `json:"txn_id"`
+	QueryId uint16      `json:"query_id"`
+	Query   string      `json:"query"`
+	Result  sql.Result  `json:"result"`
+	// Rows    sql.Rows      `json:"rows"`
+	QueryResult meta.QueryResults `json: query_result`
+	Time        time.Duration     `json:"time"`
+	Error       bool              `json:"error"`
 }
 
 func NewMessage(t MessageType, src string, dst string, txn_id uint64) *Message {
@@ -91,7 +93,9 @@ func (m Message) QueryRequestHandler(c *Coordinator) error {
 		if err != nil {
 			l.Errorln("exec failed", err)
 		}
-		resp.SetQueryResult(rows)
+
+		result := mysql.ParseRows(rows)
+		resp.SetQueryResult(result)
 	} else {
 		res, err := c.Context.DB.Exec(m.Query)
 		if err != nil {
@@ -131,8 +135,8 @@ func (m Message) QueryResponseHandler(c *Coordinator) error {
 			return errors.New("invaild arguments")
 		}
 
-		txn.Results[query_id] = m.Result
-		txn.Rows[query_id] = m.Rows
+		// txn.Results[query_id] = m.Result
+		txn.QueryResult[query_id] = m.QueryResult
 		txn.Responses[query_id] = true
 		// l.Errorln("not a vaild sub query result")
 		return nil
@@ -167,11 +171,11 @@ func (m *Message) SetQueryId(query_id uint16) {
 // TODO: have no idea now
 func (m *Message) SetResult(res sql.Result) {
 	m.Result = res
-	m.Rows = nil
+	// m.Rows = nil
 }
 
-func (m *Message) SetQueryResult(rows *sql.Rows) {
-	m.Rows = rows
+func (m *Message) SetQueryResult(rows meta.QueryResults) {
+	m.QueryResult = rows
 	m.Result = nil
 }
 

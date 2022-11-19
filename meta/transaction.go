@@ -1,7 +1,5 @@
 package meta
 
-import "database/sql"
-
 type TransactionType uint32
 
 const (
@@ -17,7 +15,7 @@ type Transaction struct {
 	Type         TransactionType
 	Sql          string
 	Participants []string
-	Results      []sql.Result
-	Rows         []*sql.Rows
-	Responses    []bool
+	// Results      []sql.Result
+	QueryResult []QueryResults
+	Responses   []bool
 }

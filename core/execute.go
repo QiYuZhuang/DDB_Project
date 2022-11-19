@@ -3,6 +3,7 @@ package core
 import (
 	cfg "project/config"
 	"project/meta"
+	"project/mysql"
 )
 
 type Executor struct {
@@ -26,17 +27,17 @@ func LocalExecSql(sql_id int, txn *meta.Transaction, sql string, c *Coordinator,
 	}
 	l.Infoln("local exec sql: ", sql)
 	if !is_select {
-		res, err := db.Exec(sql)
+		_, err := db.Exec(sql)
 		if err != nil {
 			l.Errorln("local exec failed. err: ", err.Error())
 		}
-		txn.Results[sql_id] = res
+		// txn.Results[sql_id] = res
 	} else {
 		rows, err := db.Query(sql)
 		if err != nil {
 			l.Errorln("local exec failed. err: ", err.Error())
 		}
-		txn.Rows[sql_id] = rows
+		txn.QueryResult[sql_id] = mysql.ParseRows(rows)
 	}
 	txn.Responses[sql_id] = true
 }
