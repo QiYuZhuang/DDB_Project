@@ -18,5 +18,6 @@ type Transaction struct {
 	Sql          string
 	Participants []string
 	Results      []sql.Result
+	Rows         []*sql.Rows
 	Responses    []bool
 }

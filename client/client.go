@@ -55,6 +55,6 @@ func main() {
 			log.Fatalln("read error")
 		}
 
-		fmt.Println(buf[:n])
+		fmt.Println(string(buf[:n]))
 	}
 }

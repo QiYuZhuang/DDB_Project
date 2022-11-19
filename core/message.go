@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"project/meta"
+	"strings"
 	"time"
 )
 
@@ -30,6 +31,7 @@ type Message struct {
 	QueryId uint16        `json:"query_id"`
 	Query   string        `json:"query"`
 	Result  sql.Result    `json:"result"`
+	Rows    *sql.Rows     `json:"rows"`
 	Time    time.Duration `json:"time"`
 	Error   bool          `json:"error"`
 }
@@ -45,6 +47,7 @@ func NewMessage(t MessageType, src string, dst string, txn_id uint64) *Message {
 
 func (m Message) MessageHandler(c *Coordinator) error {
 	l := c.Context.Logger
+	l.Infoln("src: " + m.Src + " dst: " + m.Dst)
 
 	var err error
 	err = nil
@@ -77,16 +80,34 @@ func (m Message) QueryRequestHandler(c *Coordinator) error {
 	// run (sql, src, txn_id)
 	l := c.Context.Logger
 	l.Infoln("query is ", m.Query)
-	res, err := c.Context.DB.Exec(m.Query)
+	err := c.Context.DB.Ping()
+	if err != nil {
+		l.Errorln("database ping failed")
+	}
 	resp := NewMessage(QueryResponse, m.Dst, m.Src, m.TxnId)
 	resp.SetQueryId(m.QueryId)
+	if strings.Contains(m.Query, "SELECT") {
+		rows, err := c.Context.DB.Query(m.Query)
+		if err != nil {
+			l.Errorln("exec failed", err)
+		}
+		resp.SetQueryResult(rows)
+	} else {
+		res, err := c.Context.DB.Exec(m.Query)
+		if err != nil {
+			l.Errorln("exec failed", err)
+		}
+		resp.SetResult(res)
+	}
+
 	if err != nil {
 		// fmt.Println("exec failed, ", err)
 		resp.SetError(true)
 		FlushAndPush(resp, c)
 		return errors.New("query request handler failed")
 	}
-	resp.SetResult(res)
+	// resp.SetResult(res)
+	resp.SetError(false)
 	FlushAndPush(resp, c)
 	return nil
 }
@@ -104,8 +125,16 @@ func (m Message) QueryResponseHandler(c *Coordinator) error {
 		// 		return nil
 		// 	}
 		// }
-		txn.Results[m.QueryId] = m.Result
-		txn.Responses[m.QueryId] = true
+		query_id := m.QueryId
+		if int(query_id) >= len(txn.Participants) {
+			l.Errorln("not a vaild sub query result")
+			return errors.New("invaild arguments")
+		}
+
+		txn.Results[query_id] = m.Result
+		txn.Rows[query_id] = m.Rows
+		txn.Responses[query_id] = true
+		// l.Errorln("not a vaild sub query result")
 		return nil
 	} else {
 		l.Errorln("can not find active transcation, id is ", txn.TxnId)
@@ -138,6 +167,12 @@ func (m *Message) SetQueryId(query_id uint16) {
 // TODO: have no idea now
 func (m *Message) SetResult(res sql.Result) {
 	m.Result = res
+	m.Rows = nil
+}
+
+func (m *Message) SetQueryResult(rows *sql.Rows) {
+	m.Rows = rows
+	m.Result = nil
 }
 
 func (m *Message) SetError(is_error bool) {

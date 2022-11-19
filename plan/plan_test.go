@@ -265,7 +265,7 @@ func TestParseDebugLocal(t *testing.T) {
 	// stmt, _ := my_parser.ParseOneStmt("select test.a, test2.b from test, test2 where test.a >= 2 and test2.b < 30;", "", "")
 
 	sql_strs := []string{
-		//"create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
+		"create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
 		// "create table customer (ID int, NAME varchar(255), RANK_ int);",
 		// "insert into publisher values(103999, 'zzq', 'PRC');",
 		// "insert into publisher values(103999, 'zzq2', 'USA');",
@@ -290,6 +290,7 @@ func TestParseDebugLocal(t *testing.T) {
 		// 	"CUSTOMER.2" : ID, rank
 		// 	};`,
 		// "select * from Customer;",
+		"select * from Publisher;",
 		// "select Publisher.name from Publisher;",
 		// `select Customer.name,Orders.quantity
 		// from Customer,Orders

@@ -13,13 +13,25 @@ import (
 	cfg "project/config"
 	"project/meta"
 	"project/plan"
-	"sync"
-
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const MaxPeerNum_ = 10
+
+type Publish struct {
+	Id     int32
+	Name   string
+	Nation string
+}
+
+func (p *Publish) ToString() string {
+	var s string = ""
+	s = s + strconv.Itoa(int(p.Id)) + "|" + p.Name + "|" + p.Nation + "\n"
+	return s
+}
 
 type Coordinator struct {
 	Id                  int16
@@ -155,30 +167,39 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			TableMetas:      c.TableMetas,
 			TablePartitions: c.Partitions,
 			Peers:           c.Peers[:],
-			IsDebugLocal:    false,
+			IsDebugLocal:    true,
 		}
-		_, sqls, err := plan.ParseAndExecute(ctx, string(buf[:n]))
+		plan_tree, sqls, err := plan.ParseAndExecute(ctx, string(buf[:n]))
 		if err != nil {
 			l.Errorln(err.Error())
 		}
 
+		//var eachNodeColNames [][]string
+		var tableName string
 		// plan-tree
+		if plan_tree != nil {
+			fmt.Println(plan_tree)
+			sqls, _, tableName = generateSqlRouter(plan_tree)
+		}
 		// var sqls []SqlRouter
 		txn.Participants = make([]string, len(sqls))
 		txn.Results = make([]sql.Result, len(sqls))
+		txn.Rows = make([]*sql.Rows, len(sqls))
 		txn.Responses = make([]bool, len(sqls))
+
 		for i, s := range sqls {
 			m := c.NewQueryRequestMessage(uint16(i), s, txn)
 			id := FlushMessage(c, m)
 			if id == -1 {
 				l.Error("can not send to ip:", s.Site_ip)
 			} else if id == int(c.Id) {
-				go LocalExecSql(i, txn, s.Sql, c)
+				go LocalExecSql(i, txn, s.Sql, c, strings.Contains(s.Sql, "SELECT"))
 			} else {
 				c.DispatchMessages[id].PushBack(*m)
 			}
 			txn.Participants[i] = s.Site_ip
 			txn.Results[i] = nil
+			txn.Rows[i] = nil
 			txn.Responses[i] = false
 		}
 
@@ -193,8 +214,39 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			}
 		}
 
+		_, partition_meta, err := plan.FindMetaInfo(ctx, tableName)
+
+		var Output []Publish
+		if partition_meta.FragType == "HORIZONTAL" { //水平划分
+			for i := 0; i < len(txn.Rows); i++ {
+				var curRow = txn.Rows[i]
+				for curRow.Next() {
+					var data Publish
+					err := curRow.Scan(&data.Id, &data.Name, &data.Name)
+					if err != nil {
+						l.Error(err)
+						break
+					} else {
+						Output = append(Output, data)
+					}
+				}
+			}
+		} else { //垂直划分
+
+			for i := 0; i < len(txn.Rows); i++ {
+				var curRow = txn.Rows[i]
+				if curRow.Next() {
+
+				}
+			}
+
+		}
+
 		// response
-		response := "ok"
+		response := ""
+		for i := 0; i < len(Output); i++ {
+			response += Output[i].ToString()
+		}
 		conn.Write([]byte(response))
 		delete(c.ActiveTransactions, txn.TxnId)
 	}
@@ -224,6 +276,47 @@ func (c *Coordinator) Start() {
 	c.connect_to_peers()
 	// create a goroutine, which listen to local connection
 	c.wait_for_local_connection()
+}
+
+func generateSqlRouter(node *plan.PlanTreeNode) ([]meta.SqlRouter, [][]string, string) {
+	var resArray []meta.SqlRouter
+	var eachNodeColNames [][]string
+	var tableName string
+	dfsPlanNode(node, &resArray, &eachNodeColNames, &tableName)
+	return resArray, eachNodeColNames, tableName
+}
+
+func dfsPlanNode(node *plan.PlanTreeNode, resArray *[]meta.SqlRouter, eachNodeColNames *[][]string, tableName *string) {
+	if node == nil {
+		return
+	}
+
+	if node.GetChildrenNum() == 0 {
+		var res meta.SqlRouter
+		res.Site_ip = node.ExecuteSiteIP
+		var sqlStr string = "SELECT @ FROM @;"
+		var columns string = " "
+		var curNodeCols []string
+		for i := 0; i < len(node.ColsName)-1; i++ {
+			columns = columns + node.ColsName[i] + ","
+			curNodeCols = append(curNodeCols, node.ColsName[i])
+		}
+		columns = columns + node.ColsName[len(node.ColsName)-1]
+
+		sqlStr = strings.Replace(sqlStr, "@", columns, 1)
+
+		sqlStr = strings.Replace(sqlStr, "@", node.FromTableName, 1)
+
+		res.Sql = sqlStr
+		*eachNodeColNames = append(*eachNodeColNames, curNodeCols)
+		*resArray = append(*resArray, res)
+		*tableName = node.FromTableName
+	} else {
+		for i := 0; i < node.GetChildrenNum(); i++ {
+			dfsPlanNode(node.GetChild(i), resArray, eachNodeColNames, tableName)
+		}
+	}
+
 }
 
 // func (c *Coordinator) BroadcastToPeers(sql string, peers []string) {
