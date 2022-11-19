@@ -424,7 +424,7 @@ func PrintPlanTreePlot(p *PlanTreeNode) string {
 	}
 
 	// 3. write to file directly
-	if err := g.RenderFilename(graph, graphviz.PNG, "/home/bigdata/Course3-DDB/DDB_Project/file/graph.png"); err != nil {
+	if err := g.RenderFilename(graph, graphviz.PNG, "./file/graph.png"); err != nil {
 		log.Fatal(err)
 	}
 
