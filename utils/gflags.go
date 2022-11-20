@@ -24,7 +24,7 @@ func (args *argvs) ParseArgsInit() {
 	flag.BoolVar(&args.debug, "debug", false, "debug version")
 	flag.BoolVar(&args.release, "release", false, "release version")
 	flag.StringVar(&args.fragment_strategy, "strategy", "", "fragment strategy: horizontal/vertical/hybrid")
-	flag.StringVar(&args.peer_file, "pfile", "../config/cluster.ips", "config file of cluster")
+	flag.StringVar(&args.peer_file, "pfile", "config/cluster.ips", "config file of cluster")
 }
 
 func (args *argvs) assign_to_context(ctx *cfg.Context) {

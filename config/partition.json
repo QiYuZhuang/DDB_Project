@@ -2,50 +2,273 @@
 {
     "patitions": [
         {
-            "table_name": "publisher",
-            "site_ip": [
-                "10.77.110.145",
-                "10.77.110.146"
-            ], 
-            "condition": [
+            "table_name": "PUBLISHER",
+            "site_info": [
                 {
-                    "key": "id",
+                    "frag_name": "PUBLISHER_1",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "PUBLISHER_2",
+                    "ip": "10.77.110.146"
+                },
+                {
+                    "frag_name": "PUBLISHER_3",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "PUBLISHER_4",
+                    "ip": "10.77.110.146"
+                }
+            ], 
+            "fragmentation_type": "horizontal", 
+            "horizontal_fragmentation": [
+                {
+                    "frag_name": "PUBLISHER_1",
                     "range": [
                         {
-                            "gt": "0", 
-                            "lt": "104000"
+                            "col_name" : "ID",
+                            "get" : "0",
+                            "lt" : "104000",
+                            "eq" : ""
                         },
                         {
-                            "gt" : "104000",
-                            "lt" : "999999"
+                            "col_name" : "NATION",
+                            "get" : "",
+                            "lt" : "",
+                            "eq":  "PRC"
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "PUBLISHER_2",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "0",
+                            "lt" : "104000",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "NATION",
+                            "get" : "",
+                            "lt" : "",
+                            "eq":  "USA"
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "PUBLISHER_3",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "104000",
+                            "lt" : "",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "NATION",
+                            "get" : "",
+                            "lt" : "",
+                            "eq":  "PRC"
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "PUBLISHER_4",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "104000",
+                            "lt" : "",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "NATION",
+                            "get" : "",
+                            "lt" : "",
+                            "eq":  "USA"
                         }
                     ]
                 }
+            ],
+            "vertical_fragmentation":[]
+        },
 
+        {
+            "table_name": "CUSTOMER",
+
+            "site_info": [
+                {
+                    "frag_name": "CUSTOMER_1",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "CUSTOMER_2",
+                    "ip": "10.77.110.146"
+                }
+            ], 
+            "fragmentation_type": "vertical", 
+            "horizontal_fragmentation": [],
+            "vertical_fragmentation":[
+                {
+                    "frag_name": "CUSTOMER_1",
+                    "col_names": ["ID", "NAME"]
+                },
+                {
+                    "frag_name": "CUSTOMER_2",
+                    "col_names": ["ID", "RANK_"]
+                }
             ]
         },
+
         {
-            "table_name": "book",
-            "site_ip": [
-                "10.77.110.145",
-                "10.77.110.146"
-            ], 
-            "condition": [
+            "table_name": "ORDERS",
+            "site_info": [
                 {
-                    "key": "id",
+                    "frag_name": "ORDERS_1",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "ORDERS_2",
+                    "ip": "10.77.110.146"
+                },
+                {
+                    "frag_name": "ORDERS_3",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "ORDERS_4",
+                    "ip": "10.77.110.146"
+                }
+            ], 
+            "fragmentation_type": "horizontal", 
+            "horizontal_fragmentation": [
+                {
+                    "frag_name": "ORDERS_1",
                     "range": [
                         {
-                            "gt": "0", 
-                            "lt": "104000"
+                            "col_name" : "CUSTOMER_ID",
+                            "get" : "",
+                            "lt" : "307000",
+                            "eq" : ""
                         },
                         {
-                            "gt" : "104000",
-                            "lt" : "999999"
+                            "col_name" : "BOOK_ID",
+                            "get" : "",
+                            "lt" : "215000",
+                            "eq":  ""
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "ORDERS_2",
+                    "range": [
+                        {
+                            "col_name" : "CUSTOMER_ID",
+                            "get" : "",
+                            "lt" : "307000",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "BOOK_ID",
+                            "get" : "215000",
+                            "lt" : "",
+                            "eq":  ""
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "ORDERS_3",
+                    "range": [
+                        {
+                            "col_name" : "CUSTOMER_ID",
+                            "get" : "307000",
+                            "lt" : "",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "BOOK_ID",
+                            "get" : "",
+                            "lt" : "215000",
+                            "eq":  ""
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "ORDERS_4",
+                    "range": [
+                        {
+                            "col_name" : "CUSTOMER_ID",
+                            "get" : "307000",
+                            "lt" : "",
+                            "eq" : ""
+                        },
+                        {
+                            "col_name" : "BOOK_ID",
+                            "get" : "215000",
+                            "lt" : "",
+                            "eq":  ""
                         }
                     ]
                 }
+            ],
+            "vertical_fragmentation":[]
+        },
 
-            ]
+        {
+            "table_name": "BOOK",
+            "site_info": [
+                {
+                    "frag_name": "BOOK_1",
+                    "ip": "10.77.110.145"
+                },
+                {
+                    "frag_name": "BOOK_2",
+                    "ip": "10.77.110.146"
+                },
+                {
+                    "frag_name": "BOOK_3",
+                    "ip": "10.77.110.145"
+                }
+            ], 
+            "fragmentation_type": "horizontal", 
+            "horizontal_fragmentation": [
+                {
+                    "frag_name": "BOOK_1",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "",
+                            "lt" : "205000",
+                            "eq" : ""
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "BOOK_2",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "205000",
+                            "lt" : "210000",
+                            "eq" : ""
+                        }
+                    ]
+                },
+                {
+                    "frag_name": "BOOK_3",
+                    "range": [
+                        {
+                            "col_name" : "ID",
+                            "get" : "210000",
+                            "lt" : "",
+                            "eq" : ""
+                        }
+                    ]
+                }
+            ],
+            "vertical_fragmentation":[]
         }
     ]
 }

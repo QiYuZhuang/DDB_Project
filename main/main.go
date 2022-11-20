@@ -5,6 +5,7 @@ import (
 	"os"
 	cfg "project/config"
 	core "project/core"
+	etcd "project/etcd"
 	mysql "project/mysql"
 	utils "project/utils"
 	logger "project/utils/log"
@@ -17,6 +18,8 @@ func main() {
 		fmt.Printf("args[%v]=[%v]\n", k, v)
 	}
 	var ctx cfg.Context
+	etcd.Connect_etcd() //连接etcd客户端
+
 	utils.ParseArgs(&ctx)
 	// init log level, log file...
 	logger.LoggerInit(&ctx)
@@ -24,6 +27,7 @@ func main() {
 	mysql.SQLDriverInit(&ctx)
 	// start coordinator <worker, socket_input, socket_dispatcher>
 	c := core.NewCoordinator(&ctx)
+
 	c.Start()
 	// wait for terminal
 }

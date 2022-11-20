@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -8,7 +9,7 @@ import (
 )
 
 func ConnectionHandler(c *Coordinator, conn net.Conn) {
-	l := c.context.Logger
+	l := c.Context.Logger
 	buf := make([]byte, 4096)
 	defer conn.Close()
 	for {
@@ -22,17 +23,30 @@ func ConnectionHandler(c *Coordinator, conn net.Conn) {
 
 		// buf possibly json format
 		// transform to struct Message and call MessageHandler
-		var ki Message
-		json.Unmarshal(buf[:n], &ki)
-		ki.MessageHandler(c.context)
+		l.Infoln("var ki Message sql: ", n, buf, string(buf))
+
+		cur_pos := 0
+		for cur_pos < n {
+			var ki Message
+
+			data_len := binary.BigEndian.Uint32(buf[cur_pos : cur_pos+4])
+			cur_pos += 4
+
+			json.Unmarshal(buf[cur_pos:cur_pos+int(data_len)], &ki)
+			l.Infoln("var ki Message sql: ", ki.Query, n, buf, string(buf))
+			ki.MessageHandler(c)
+
+			cur_pos += int(data_len)
+		}
+
 		// c.InputMessages.PushBack(ki)
 	}
 }
 
 func ClientConnectionHandler(c *Coordinator, peer_idx int) {
-	l := c.context.Logger
+	l := c.Context.Logger
 	port := "10800"
-	address := fmt.Sprintf("%s:%s", c.peers[peer_idx].ip, port)
+	address := fmt.Sprintf("%s:%s", c.Peers[peer_idx].Ip, port)
 	maxRetry := 25
 	cntRetry := 1
 	var conn net.Conn
@@ -53,37 +67,55 @@ func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 		time.Sleep(1 * time.Second)
 	}
 	defer conn.Close()
+	c.DispatcherSockets[peer_idx] = conn
 	l.Debug(address, ", client connect")
 
 	for {
-		if c.DispatchMessages.Len() != 0 {
-			m := c.DispatchMessages.Front()
+		c.d_mutex.Lock()
+		// for i := 0; i < int(c.Peer_num); i++ {
+		// p := c.Peers[peer_idx]
+		for c.DispatchMessages[peer_idx].Len() != 0 {
+			i := c.DispatchMessages[peer_idx].Front()
+			// if reflect.TypeOf(m).Name() != "Message" {
+			// 	l.Errorln("when dispatch, message type error", reflect.TypeOf(m).Name())
+			// }
+			m, ok := (i.Value).(Message)
+			if !ok {
+				l.Errorln("element to message failed")
+			}
+			l.Infoln("src: " + m.Src + " dst: " + m.Dst)
+
 			if data, err := json.Marshal(m); err == nil {
+				data_len := make([]byte, 4)
+				binary.BigEndian.PutUint32(data_len, uint32(len(data)))
+				data = append(data_len, data...)
 				_, err = conn.Write(data)
 				if err != nil {
-					l.Errorln("when write conn, conn closed.", err.Error())
+					l.Errorln("when write conn, conn closed.", err.Error(), data, string(data))
 				}
 			} else {
 				l.Errorln("json marshal failed, ", err.Error())
 			}
 
-			c.DispatchMessages.Remove(m)
+			c.DispatchMessages[peer_idx].Remove(i)
 		}
+		// }
+		c.d_mutex.Unlock()
 	}
 }
 
-func CreateInputSockets(c *Coordinator) {
-	for i := 0; i < len(c.peers); i++ {
-		if c.peers[i].id != c.id {
+func CreateDispatcherSockets(c *Coordinator) {
+	for i := 0; i < int(c.Peer_num); i++ {
+		if c.Peers[i].Id != c.Id {
 			go ClientConnectionHandler(c, i)
 		}
 	}
 }
 
-func CreateDispatcherSockets(c *Coordinator) {
-	l := c.context.Logger
+func CreateInputSockets(c *Coordinator) {
+	l := c.Context.Logger
 	port := "10800"
-	address := fmt.Sprintf("%s:%s", c.context.DB_host, port)
+	address := fmt.Sprintf("%s:%s", c.Context.DB_host, port)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		l.Error("socket listen failed", err)
@@ -95,8 +127,36 @@ func CreateDispatcherSockets(c *Coordinator) {
 			if err != nil {
 				l.Error("socket accept failed.", err.Error())
 			}
-			c.DispatcherSockets = append(c.DispatcherSockets, new_conn)
+			var idx int
+			for i := 0; i < int(c.Peer_num); i++ {
+				p := c.Peers[i]
+				if p.Ip == new_conn.RemoteAddr().String() {
+					idx = i
+					break
+				}
+			}
+			c.DispatcherSockets[idx] = new_conn
 			go ConnectionHandler(c, new_conn)
 		}
 	}(&listener)
+}
+
+func FlushMessage(c *Coordinator, m *Message) int {
+	c.d_mutex.Lock()
+	defer c.d_mutex.Unlock()
+
+	var idx int
+
+	for i := 0; i < int(c.Peer_num); i++ {
+		p := c.Peers[i]
+		if p.Ip == m.Dst {
+			idx = int(p.Id)
+			break
+		}
+		if i == int(c.Peer_num)-1 {
+			return -1
+		}
+	}
+
+	return idx
 }
