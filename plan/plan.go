@@ -506,9 +506,15 @@ func ParseAndExecute(ctx meta.Context, sql_str string) (*PlanTreeNode, []meta.Sq
 	fmt.Println(sql_str)
 	if strings.Contains(sql_str, "PARTITION") {
 		sql_str = strings.Replace(sql_str, " ", "", -1)
-		_, err := HandlePartitionSQL(ctx, sql_str)
+		partition_infos, err := HandlePartitionSQL(ctx, sql_str)
 		if err != nil {
 			fmt.Println(err)
+		}
+		if !ctx.IsDebugLocal {
+			err := etcd.SaveFragmenttoEtcd(partition_infos)
+			if err != nil {
+				fmt.Println(err)
+			}
 		}
 	} else {
 		stmt, err1 := my_parser.ParseOneStmt(sql_str, "", "")

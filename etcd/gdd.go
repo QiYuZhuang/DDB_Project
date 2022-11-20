@@ -131,9 +131,9 @@ func GetTables() ([]string, error) {
 }
 
 func GetPartitionTablenames() ([]string, error) {
-	tablestr, err := GetKey("/partition_tablenames")
+	tablestr, err := GetKey("/patition_tablenames")
 	if err != nil {
-		fmt.Println("get partition_tablenames")
+		fmt.Println("get patition_tablenames")
 		return nil, err
 	}
 	temp := strings.Split(bytetoString(tablestr), ",")
@@ -201,7 +201,7 @@ func SaveFragmenttoEtcd(partition meta.Partition) error {
 		}
 	}
 
-	k0 := "/partition_tablenames"
+	k0 := "/patition_tablenames"
 	v0 := strings.Join(exist_tables, ",")
 	if len(v0) == 0 {
 		v0 += partition.TableName
@@ -209,7 +209,7 @@ func SaveFragmenttoEtcd(partition meta.Partition) error {
 		v0 += "," + partition.TableName
 	}
 
-	//存放tables信息-->/partition_tablenames
+	//存放tables信息-->/patition_tablenames
 	PutKey(k0, v0)
 
 	mode := partition.FragType
