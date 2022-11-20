@@ -274,14 +274,14 @@ func TestParseDebugLocal(t *testing.T) {
 		// "insert into customer values(20000, 'hello world', 2);",
 		// "insert into customer values(20000, 'hello world', 2);",
 		// "drop table customer;",
-		// `create partition on |PUBLISHER| [horizontal]
-		// 	at (10.77.110.145, 10.77.110.146, 10.77.110.145, 10.77.110.146)
-		// 	where {
-		// 	 "PUBLISHER.1" : ID < 104000 and NATION = 'PRC';
-		// 	 "PUBLISHER.2" : ID < 104000 and NATION = 'USA';
-		// 	 "PUBLISHER.3" : ID >= 104000 and NATION = 'PRC';
-		// 	 "PUBLISHER.4" : ID >= 104000 and NATION = 'USA'
-		// 	};`,
+		`create partition on |PUBLISHER| [horizontal] \
+			at (10.77.110.145, 10.77.110.146, 10.77.110.145, 10.77.110.146) \
+			where { \
+			 "PUBLISHER_1" : ID < 104000 and NATION = 'PRC'; \
+			 "PUBLISHER_2" : ID < 104000 and NATION = 'USA'; \
+			 "PUBLISHER_3" : ID >= 104000 and NATION = 'PRC'; \
+			 "PUBLISHER_4" : ID >= 104000 and NATION = 'USA' \
+			};`,
 		// "create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
 		// `create partition on |CUSTOMER| [vertical]
 		// 	at (10.77.110.145, 10.77.110.146)

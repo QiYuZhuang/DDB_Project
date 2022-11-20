@@ -153,19 +153,19 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			TableMetas:      c.TableMetas,
 			TablePartitions: c.Partitions,
 			Peers:           c.Peers[:],
-			IsDebugLocal:    true,
+			IsDebugLocal:    false,
 		}
 		plan_tree, sqls, err := plan.ParseAndExecute(ctx, string(buf[:n]))
 		if err != nil {
 			l.Errorln(err.Error())
 		}
 
-		//var eachNodeColNames [][]string
+		var eachNodeColNames [][]string
 		var tableName string
 		// plan-tree
 		if plan_tree != nil {
 			fmt.Println(plan_tree)
-			sqls, _, tableName = generateSqlRouter(plan_tree)
+			sqls, eachNodeColNames, tableName = generateSqlRouter(plan_tree)
 		}
 		// var sqls []SqlRouter
 		txn.Participants = make([]string, len(sqls))
@@ -200,33 +200,41 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 				time.Sleep(time.Duration(1) * time.Nanosecond)
 			}
 		}
+		response := "ok"
 
-		partition_meta, err := plan.GetPartitionMeta(ctx, tableName)
-		if err != nil {
-			l.Error("xxx")
-		}
-
-		var Output []meta.Publish
-		if strings.EqualFold(partition_meta.PartitionType, "HORIZONTAL") { //水平划分
-			for i := 0; i < len(txn.QueryResult); i++ {
-				var curRow = txn.QueryResult[i]
-				Output = append(Output, curRow.Results...)
-			}
-		} else { //垂直划分
-
-			for i := 0; i < len(txn.QueryResult); i++ {
-				// var curRow = txn.QueryResult[i]
-				// if curRow.Next() {
-
-				// }
+		if len(tableName) > 0 {
+			partition_meta, err := plan.GetPartitionMeta(ctx, tableName)
+			if err != nil {
+				l.Error("xxx")
 			}
 
-		}
+			var Output []meta.Publish
 
-		// response
-		response := ""
-		for i := 0; i < len(Output); i++ {
-			response += Output[i].ToString()
+			if strings.EqualFold(partition_meta.PartitionType, "HORIZONTAL") { //水平划分
+				for i := 0; i < len(txn.QueryResult); i++ {
+					var curRow = txn.QueryResult[i]
+					Output = append(Output, curRow.Results...)
+				}
+				for i := 0; i < len(eachNodeColNames[0]); i++ {
+					response += eachNodeColNames[0][i] + "|"
+				}
+				response += "\n"
+
+			} else { //垂直划分
+
+				for i := 0; i < len(txn.QueryResult); i++ {
+					// var curRow = txn.QueryResult[i]
+					// if curRow.Next() {
+
+					// }
+				}
+
+			}
+
+			// response
+			for i := 0; i < len(Output); i++ {
+				response += Output[i].ToString()
+			}
 		}
 		conn.Write([]byte(response))
 		delete(c.ActiveTransactions, txn.TxnId)

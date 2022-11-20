@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"project/etcd"
 	"project/meta"
 	"strconv"
 	"strings"
@@ -488,6 +489,12 @@ func ParseAndExecute(ctx meta.Context, sql_str string) (*PlanTreeNode, []meta.Sq
 	var ret []meta.SqlRouter
 	var err error
 
+	if !ctx.IsDebugLocal {
+		err := etcd.RefreshContext(&ctx)
+		if err != nil {
+			return p, ret, err
+		}
+	}
 	my_parser := parser.New()
 
 	sql_str = strings.ToUpper(sql_str)

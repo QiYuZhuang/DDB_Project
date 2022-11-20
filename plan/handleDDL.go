@@ -40,7 +40,9 @@ func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, e
 	// ret.SQL = sql
 
 	tablename := sel.Table.Name.String()
-
+	if !strings.Contains(sel.Text(), "(") {
+		return ret, errors.New("INVALID create table : " + sel.Text())
+	}
 	create_cols := strings.Split(utils.GetMidStr(sel.Text(), "(", ")"), ",")
 
 	// find meta

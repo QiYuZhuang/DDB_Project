@@ -158,10 +158,11 @@ func SaveTabletoEtcd(table meta.TableMeta) error {
 	v2 := ""
 
 	for i := 0; i < len(table.Columns); i++ {
+		if len(v2) > 0 {
+			v2 += ","
+		}
 		v2 += table.Columns[i].ColumnName
-		v2 += ","
 	}
-	v2 = v2[:len(v2)-1]
 	//存放tables/table信息--table/columns
 	PutKey(k2, v2)
 
@@ -610,12 +611,14 @@ func DropTablefromEtcd(tablename string) error {
 	k1 := "/tables"
 	v1 := ""
 	for i := 0; i < len(exist_tables); i++ {
-		if exist_tables[i] != tablename {
-			v1 += exist_tables[i]
+		if len(v1) > 0 {
 			v1 += ","
 		}
+		if exist_tables[i] != tablename {
+			v1 += exist_tables[i]
+		}
 	}
-	v1 = v1[:len(v1)-1]
+
 	//存放tables信息-->table  把k1:v1的中tablename的信息删除
 	PutKey(k1, v1)
 
