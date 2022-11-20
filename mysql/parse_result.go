@@ -14,7 +14,7 @@ func ParseRows(rows *sql.Rows) meta.QueryResults {
 	}
 	for rows.Next() {
 		var data meta.Publish
-		err := rows.Scan(&data.Id, &data.Name, &data.Name)
+		err := rows.Scan(&data.Id, &data.Name, &data.Nation)
 		if err != nil {
 			// l.Error(err)
 			log.Error(err.Error())

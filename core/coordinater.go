@@ -181,6 +181,7 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			} else if id == int(c.Id) {
 				go LocalExecSql(i, txn, s.Sql, c, strings.Contains(s.Sql, "SELECT"))
 			} else {
+				l.Infoln(m.Query, m.Src, m.Dst)
 				c.DispatchMessages[id].PushBack(*m)
 			}
 			txn.Participants[i] = s.Site_ip
@@ -207,19 +208,10 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 
 		var Output []meta.Publish
 		if strings.EqualFold(partition_meta.PartitionType, "HORIZONTAL") { //水平划分
-			// for i := 0; i < len(txn.Rows); i++ {
-			// 	var curRow = txn.Rows[i]
-			// 	for curRow.Next() {
-			// 		var data meta.Publish
-			// 		err := curRow.Scan(&data.Id, &data.Name, &data.Name)
-			// 		if err != nil {
-			// 			l.Error(err)
-			// 			break
-			// 		} else {
-			// 			Output = append(Output, data)
-			// 		}
-			// 	}
-			// }
+			for i := 0; i < len(txn.QueryResult); i++ {
+				var curRow = txn.QueryResult[i]
+				Output = append(Output, curRow.Results...)
+			}
 		} else { //垂直划分
 
 			for i := 0; i < len(txn.QueryResult); i++ {

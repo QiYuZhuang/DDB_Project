@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -22,10 +23,22 @@ func ConnectionHandler(c *Coordinator, conn net.Conn) {
 
 		// buf possibly json format
 		// transform to struct Message and call MessageHandler
-		var ki Message
-		json.Unmarshal(buf[:n], &ki)
-		// l.Infoln("sql: ", ki.Query)
-		ki.MessageHandler(c)
+		l.Infoln("var ki Message sql: ", n, buf, string(buf))
+
+		cur_pos := 0
+		for cur_pos < n {
+			var ki Message
+
+			data_len := binary.BigEndian.Uint32(buf[cur_pos : cur_pos+4])
+			cur_pos += 4
+
+			json.Unmarshal(buf[cur_pos:cur_pos+int(data_len)], &ki)
+			l.Infoln("var ki Message sql: ", ki.Query, n, buf, string(buf))
+			ki.MessageHandler(c)
+
+			cur_pos += int(data_len)
+		}
+
 		// c.InputMessages.PushBack(ki)
 	}
 }
@@ -71,7 +84,11 @@ func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 				l.Errorln("element to message failed")
 			}
 			l.Infoln("src: " + m.Src + " dst: " + m.Dst)
+
 			if data, err := json.Marshal(m); err == nil {
+				data_len := make([]byte, 4)
+				binary.BigEndian.PutUint32(data_len, uint32(len(data)))
+				data = append(data_len, data...)
 				_, err = conn.Write(data)
 				if err != nil {
 					l.Errorln("when write conn, conn closed.", err.Error())
