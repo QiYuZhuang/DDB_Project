@@ -143,8 +143,21 @@ func FindMetaInfo(ctx meta.Context, tablename string) (meta.TableMeta, meta.Part
 	var table_meta meta.TableMeta
 	var partition_meta meta.Partition
 	var err error
+
 	// find metaData
 	is_find_ := false
+	// find PartitionMetaData
+	for _, element := range ctx.TablePartitions.Partitions {
+		if strings.EqualFold(element.TableName, tablename) {
+			partition_meta = element
+			is_find_ = true
+			break
+		}
+	}
+	if !is_find_ {
+		err = errors.New("fail to find partition info about " + tablename + " in current database")
+		return table_meta, partition_meta, err
+	}
 	for _, element := range ctx.TableMetas.TableMetas {
 		if strings.EqualFold(element.TableName, tablename) {
 			table_meta = element
@@ -154,17 +167,6 @@ func FindMetaInfo(ctx meta.Context, tablename string) (meta.TableMeta, meta.Part
 	}
 	if !is_find_ {
 		err = errors.New("fail to find table" + tablename + " in current database")
-		return table_meta, partition_meta, err
-	}
-	// find PartitionMetaData
-	for _, element := range ctx.TablePartitions.Partitions {
-		if strings.EqualFold(element.TableName, tablename) {
-			partition_meta = element
-			break
-		}
-	}
-	if !is_find_ {
-		err = errors.New("fail to find partition info about " + tablename + " in current database")
 		return table_meta, partition_meta, err
 	}
 

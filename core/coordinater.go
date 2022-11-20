@@ -209,7 +209,7 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			}
 
 			var Output []meta.Publish
-
+			response = ""
 			if strings.EqualFold(partition_meta.PartitionType, "HORIZONTAL") { //水平划分
 				for i := 0; i < len(txn.QueryResult); i++ {
 					var curRow = txn.QueryResult[i]
@@ -284,13 +284,16 @@ func dfsPlanNode(node *plan.PlanTreeNode, resArray *[]meta.SqlRouter, eachNodeCo
 		var res meta.SqlRouter
 		res.Site_ip = node.ExecuteSiteIP
 		var sqlStr string = "SELECT @ FROM @;"
-		var columns string = " "
+		var columns string = ""
 		var curNodeCols []string
-		for i := 0; i < len(node.ColsName)-1; i++ {
-			columns = columns + node.ColsName[i] + ","
+		for i := 0; i < len(node.ColsName); i++ {
+			if len(columns) > 0 {
+				columns += ","
+			}
+			columns = columns + node.ColsName[i]
 			curNodeCols = append(curNodeCols, node.ColsName[i])
 		}
-		columns = columns + node.ColsName[len(node.ColsName)-1]
+		columns = " " + columns
 
 		sqlStr = strings.Replace(sqlStr, "@", columns, 1)
 

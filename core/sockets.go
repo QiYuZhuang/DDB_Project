@@ -91,7 +91,7 @@ func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 				data = append(data_len, data...)
 				_, err = conn.Write(data)
 				if err != nil {
-					l.Errorln("when write conn, conn closed.", err.Error())
+					l.Errorln("when write conn, conn closed.", err.Error(), data, string(data))
 				}
 			} else {
 				l.Errorln("json marshal failed, ", err.Error())

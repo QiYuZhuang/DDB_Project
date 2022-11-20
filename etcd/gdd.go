@@ -130,6 +130,16 @@ func GetTables() ([]string, error) {
 	return temp, nil
 }
 
+func GetPartitionTablenames() ([]string, error) {
+	tablestr, err := GetKey("/partition_tablenames")
+	if err != nil {
+		fmt.Println("get partition_tablenames")
+		return nil, err
+	}
+	temp := strings.Split(bytetoString(tablestr), ",")
+	return temp, nil
+}
+
 func SaveTabletoEtcd(table meta.TableMeta) error {
 	exist_tables, err := GetTables()
 	if err != nil {
@@ -179,6 +189,29 @@ func SaveTabletoEtcd(table meta.TableMeta) error {
 }
 
 func SaveFragmenttoEtcd(partition meta.Partition) error {
+	exist_tables, err := GetPartitionTablenames()
+	if err != nil {
+		fmt.Println("save partition meta to etcd failed")
+		return err
+	}
+	for i := 0; i < len(exist_tables); i++ {
+		if exist_tables[i] == partition.TableName {
+			err = errors.New("table exist! save partition meta to etcd failed")
+			return err
+		}
+	}
+
+	k0 := "/partition_tablenames"
+	v0 := strings.Join(exist_tables, ",")
+	if len(v0) == 0 {
+		v0 += partition.TableName
+	} else {
+		v0 += "," + partition.TableName
+	}
+
+	//存放tables信息-->/partition_tablenames
+	PutKey(k0, v0)
+
 	mode := partition.FragType
 	switch mode {
 	case "HORIZONTAL":
@@ -638,7 +671,7 @@ func bytetoString(b []byte) string {
 func RefreshContext(ctx *meta.Context) error {
 	var err error
 
-	table_names, err := GetTables()
+	table_names, err := GetPartitionTablenames()
 	if err != nil {
 		return err
 	}

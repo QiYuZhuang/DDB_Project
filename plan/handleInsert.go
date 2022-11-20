@@ -44,7 +44,7 @@ func GenInsertRequest(table_meta meta.TableMeta, partition_meta meta.Partition, 
 
 				val_ := values[cur_col_index_]
 				val_ = strings.Trim(val_, " ")
-				val_ = strings.Trim(val_, "'")
+				// val_ = strings.Trim(val_, "'")
 
 				// value get compared with condition
 				if len(cond_.Equal) != 0 {
