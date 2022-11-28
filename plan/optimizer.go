@@ -3,7 +3,7 @@ package plan
 import (
 	"errors"
 	"fmt"
-	"project/meta"
+	meta "project/meta"
 	utils "project/utils"
 	"sort"
 	"strconv"
@@ -87,6 +87,27 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 		}
 	}
 	return conds_, cols_
+}
+
+func GetFilterCondition(frags_ meta.Partition, frag_name string) ([]string, []string, error) {
+	// filter condition
+	var condition_str_ []string
+
+	conds_, col_str_ := InitFragWithCondition(frags_, frag_name)
+
+	if strings.EqualFold(frags_.FragType, "HORIZONTAL") {
+		for _, cond_ := range conds_ {
+			expr, ok := cond_.(*ast.BinaryOperationExpr)
+			if !ok {
+				return condition_str_, col_str_, errors.New("fail to type cast into BinaryOperationExpr")
+			}
+			condition_str_ = append(condition_str_, TransExprNode2Str(expr))
+		}
+	}
+	sort.Strings(condition_str_)
+	sort.Strings(col_str_)
+	//
+	return condition_str_, col_str_, nil
 }
 
 func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {

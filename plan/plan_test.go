@@ -207,7 +207,7 @@ import (
 
 func TestParseDebugLocal(t *testing.T) {
 	// read partion meta info
-	jsonFileDir := "/home/bigdata/Course3-DDB/DDB_Project/config/partition.json"
+	jsonFileDir := "/home/zqs/DDB_Project/config/partition.json"
 	jsonFile, err := os.Open(jsonFileDir)
 	if err != nil {
 		fmt.Println(err)
@@ -221,7 +221,7 @@ func TestParseDebugLocal(t *testing.T) {
 	////
 
 	// read table meta info
-	jsonFileDir = "/home/bigdata/Course3-DDB/DDB_Project/config/table_meta.json"
+	jsonFileDir = "/home/zqs/DDB_Project/config/table_meta.json"
 	jsonFile, err = os.Open(jsonFileDir)
 	if err != nil {
 		fmt.Println(err)
@@ -254,6 +254,9 @@ func TestParseDebugLocal(t *testing.T) {
 		IP:              c.Peers[c.Id].Ip,
 		IsDebugLocal:    true,
 	}
+
+	a, b, _ := plan.GetFilterCondition(ctx.TablePartitions.Partitions[1], "CUSTOMER_1")
+	fmt.Println(a, b)
 
 	// parser and hanlder insert and select
 	// sql_str := "insert into publisher values(200000, 'hello world');"

@@ -469,21 +469,46 @@ func GetCondition(expr *ast.BinaryOperationExpr) (ColType, ColType,
 	return left, right, left_attr, right_attr, left_val, right_val, nil
 }
 
+// func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
+// 	left, right, left_attr, right_attr, _, right_val, _ := GetCondition(expr)
+// 	var left_str string
+// 	var right_str string
+
+// 	if left == AttrType && right == ValueType {
+// 		left_str = left_attr.Name.String()
+// 		right_str = right_val.GetDatumString() + strconv.Itoa(int(right_val.GetInt64()))
+// 	} else if left == AttrType && right == AttrType {
+// 		left_str = left_attr.Name.String()
+// 		right_str = right_attr.Name.String()
+// 	} else {
+// 		fmt.Println("not supported")
+// 	}
+// 	return left_str + " " + expr.Op.String() + " " + right_str
+// }
+
 func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
 	left, right, left_attr, right_attr, _, right_val, _ := GetCondition(expr)
 	var left_str string
 	var right_str string
 
 	if left == AttrType && right == ValueType {
-		left_str = left_attr.Name.String()
-		right_str = right_val.GetDatumString() + strconv.Itoa(int(right_val.GetInt64()))
+		left_str = left_attr.Name.Table.O + "." + left_attr.Name.Name.O
+		right_str = "\"" + right_val.GetDatumString() + "\""
 	} else if left == AttrType && right == AttrType {
-		left_str = left_attr.Name.String()
-		right_str = right_attr.Name.String()
+		left_str = left_attr.Name.Table.O + "." + left_attr.Name.Name.O
+		right_str = right_attr.Name.Table.O + "." + right_attr.Name.Name.O
 	} else {
 		fmt.Println("not supported")
 	}
-	return left_str + " " + expr.Op.String() + " " + right_str
+	var op_str_ string
+	if expr.Op.String() == "eq" {
+		op_str_ = "="
+	} else if expr.Op.String() == "lt" {
+		op_str_ = "<"
+	} else if expr.Op.String() == "ge" {
+		op_str_ = ">="
+	}
+	return left_str + " " + op_str_ + " " + right_str
 }
 
 func ParseAndExecute(ctx meta.Context, sql_str string) (*PlanTreeNode, []meta.SqlRouter, error) {
