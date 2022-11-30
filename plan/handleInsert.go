@@ -16,7 +16,8 @@ func GenInsertRequest(table_meta meta.TableMeta, partition_meta meta.Partition, 
 	var returns []InsertRequest
 	var err error
 
-	if strings.EqualFold(partition_meta.FragType, "HORIZONTAL") {
+	// if strings.EqualFold(partition_meta.FragType, "HORIZONTAL") {
+	if partition_meta.FragType == meta.Horizontal {
 		// insert to one table only
 		var ret InsertRequest
 
@@ -55,13 +56,13 @@ func GenInsertRequest(table_meta meta.TableMeta, partition_meta meta.Partition, 
 					}
 				} else {
 					// GT LT
-					if strings.EqualFold(cur_col.Type, "string") {
+					if cur_col.Type == meta.Varchar {
 						if !(cond_.GreaterEqualThan <= val_ &&
 							val_ < cond_.LessThan) {
 							is_satisfied_ = false
 							break
 						}
-					} else if strings.EqualFold(cur_col.Type, "int") {
+					} else if cur_col.Type == meta.Int32 {
 						var get int
 						var lt int
 						if len(cond_.GreaterEqualThan) > 0 {
@@ -100,7 +101,7 @@ func GenInsertRequest(table_meta meta.TableMeta, partition_meta meta.Partition, 
 			}
 		}
 		returns = append(returns, ret)
-	} else if strings.EqualFold(partition_meta.FragType, "VERTICAL") {
+	} else if partition_meta.FragType == meta.Vertical {
 		for frag_index, fag_ := range partition_meta.VFragInfos {
 			var ret InsertRequest
 			ret.Siteinfo = partition_meta.SiteInfos[frag_index]
@@ -142,7 +143,7 @@ func GenInsertSQL(insert_requests []InsertRequest) ([]meta.SqlRouter, error) {
 			table_cols += col_.ColName
 			table_vals += col_.Val
 		}
-		cur_sql := "insert into " + insert_req.Siteinfo.Name + "(" + table_cols + ") values " + "(" + table_vals + ");"
+		cur_sql := "insert into " + insert_req.Siteinfo.FragName + "(" + table_cols + ") values " + "(" + table_vals + ");"
 		var cur_insert meta.SqlRouter
 		cur_insert.Site_ip = insert_req.Siteinfo.IP
 		cur_insert.Sql = cur_sql
@@ -200,9 +201,9 @@ func HandleDelete(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, error)
 	if err != nil {
 		return ret, err
 	}
-	if strings.EqualFold(partition_meta.FragType, "HORIZONTAL") {
+	if partition_meta.FragType == meta.Horizontal {
 		for frag_index := range partition_meta.HFragInfos {
-			site_name_ := partition_meta.SiteInfos[frag_index].Name
+			site_name_ := partition_meta.HFragInfos[frag_index].FragName
 			var sql_router_ meta.SqlRouter
 			sql_router_.Site_ip = partition_meta.SiteInfos[frag_index].IP
 			sql_router_.Sql = sql

@@ -11,7 +11,9 @@ import (
 	"os"
 	cfg "project/config"
 	"project/meta"
+	"project/mysql"
 	"project/plan"
+	"project/utils"
 	"strings"
 	"sync"
 	"time"
@@ -153,11 +155,17 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			TableMetas:      c.TableMetas,
 			TablePartitions: c.Partitions,
 			Peers:           c.Peers[:],
-			IsDebugLocal:    false,
+			IP:              c.Context.DB_host,
+			DB:              c.Context.DB,
+			Logger:          c.Context.Logger,
+			IsDebugLocal:    true,
 		}
 		plan_tree, sqls, err := plan.ParseAndExecute(ctx, string(buf[:n]))
 		if err != nil {
 			l.Errorln(err.Error())
+			conn.Write([]byte(err.Error()))
+			continue
+			// delete(c.ActiveTransactions, txn.TxnId)
 		}
 
 		var eachNodeColNames [][]string
@@ -168,10 +176,7 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			sqls, eachNodeColNames, tableName = generateSqlRouter(plan_tree)
 		}
 		// var sqls []SqlRouter
-		txn.Participants = make([]string, len(sqls))
-		// txn.Results = make([]sql.Result, len(sqls))
-		txn.QueryResult = make([]meta.QueryResults, len(sqls))
-		txn.Responses = make([]bool, len(sqls))
+		txn.Init(len(sqls))
 
 		for i, s := range sqls {
 			m := c.NewQueryRequestMessage(uint16(i), s, txn)
@@ -179,8 +184,11 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			if id == -1 {
 				l.Error("can not send to ip:", s.Site_ip)
 			} else if id == int(c.Id) {
-				go LocalExecSql(i, txn, s.Sql, c, strings.Contains(s.Sql, "SELECT"))
+				txn.SubSqlIsRemote[i] = false
+				exec_ctx := mysql.CreateExecuteContext(i, s.Sql, s.File_path, c.Context.DB, c.Context.Logger, txn)
+				go mysql.LocalExecSql(exec_ctx, utils.ContainString(s.Sql, "SELECT", true))
 			} else {
+				txn.SubSqlIsRemote[i] = true
 				l.Infoln(m.Query, m.Src, m.Dst)
 				c.DispatchMessages[id].PushBack(*m)
 			}
@@ -210,7 +218,7 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 
 			var Output []meta.Publish
 			response = ""
-			if strings.EqualFold(partition_meta.PartitionType, "HORIZONTAL") { //水平划分
+			if partition_meta.PartitionType == meta.Horizontal { //水平划分
 				for i := 0; i < len(txn.QueryResult); i++ {
 					var curRow = txn.QueryResult[i]
 					Output = append(Output, curRow.Results...)

@@ -1,22 +1,44 @@
 package meta
 
+import (
+	"database/sql"
+	"errors"
+	"project/utils"
+	"strconv"
+
+	"github.com/sirupsen/logrus"
+)
+
 /******************* partition json *************************/
 // test, this meta should be in etcd
+type PartitionStrategy int
+
+const (
+	// HORIZONTAL
+	Horizontal PartitionStrategy = iota
+	Vertical
+	StrategyNum
+	NoStrategy
+)
+
 type Partitions struct {
 	Partitions []Partition `json:"patitions"`
 }
 type Partition struct {
-	TableName  string      `json:"table_name"`
-	SiteInfos  []SiteInfo  `json:"site_info"`
-	FragType   string      `json:"fragmentation_type"`
-	HFragInfos []HFragInfo `json:"horizontal_fragmentation"`
-	VFragInfos []VFragInfo `json:"vertical_fragmentation"`
+	TableName  string            `json:"table_name"`
+	SiteInfos  []SiteInfo        `json:"site_info"`
+	FragType   PartitionStrategy `json:"fragmentation_type"`
+	HFragInfos []HFragInfo       `json:"horizontal_fragmentation"`
+	VFragInfos []VFragInfo       `json:"vertical_fragmentation"`
 }
 
 type SiteInfo struct {
-	Name string `json:"frag_name"`
-	IP   string `json:"ip"`
+	SiteName string `json:"site_name"`
+	FragName string `json:"frag_name"`
+	IP       string `json:"ip"`
+	Port     string `json:"port"`
 }
+
 type HFragInfo struct {
 	FragName   string           `json:"frag_name"`
 	Conditions []ConditionRange `json:"range"`
@@ -30,29 +52,75 @@ type ConditionRange struct {
 }
 
 type VFragInfo struct {
-	SiteName   string   `json:"frag_name"`
+	FragName   string   `json:"frag_name"`
 	ColumnName []string `json:"col_names"`
 }
 
 /************************************************************/
 
-/******************* tableMeta json *************************/
+/********************** tableMeta json **********************/
 // test, this meta should be in etcd
 type TableMetas struct {
 	TableMetas []TableMeta `json:"tables"`
 }
+
 type TableMeta struct {
 	TableName string   `json:"table_name"`
 	Columns   []Column `json:"columns"`
 }
+
+type FieldType int
+
+const (
+	Int32 FieldType = iota
+	Varchar
+	FieldTypeNum
+)
+
+func FieldType2String(field_type FieldType) (string, error) {
+	var str string
+	var err error
+	err = nil
+	switch field_type {
+	case Int32:
+		str = "int"
+	case Varchar:
+		str = "varchar(255)"
+	default:
+		str = ""
+		err_msg := "do not support this type, FieldType is " + strconv.Itoa(int(field_type))
+		err = errors.New(err_msg)
+	}
+
+	return str, err
+}
+
+func String2Field(str string) (FieldType, error) {
+	var field_type FieldType
+	var err error
+	err = nil
+	if utils.ContainString(str, "int", true) {
+		field_type = Int32
+	} else if utils.ContainString(str, "char", true) {
+		field_type = Varchar
+	} else {
+		field_type = FieldTypeNum
+		err_msg := "do not support this type, FieldType is " + strconv.Itoa(int(field_type))
+		err = errors.New(err_msg)
+	}
+
+	return field_type, err
+}
+
 type Column struct {
-	ColumnName string `json:"col_name"`
-	Type       string `json:"type"`
+	ColumnName string    `json:"col_name"`
+	Type       FieldType `json:"type"`
 }
 
 type SqlRouter struct {
-	Sql     string
-	Site_ip string
+	File_path string
+	Sql       string
+	Site_ip   string
 }
 
 type Peer struct {
@@ -66,5 +134,7 @@ type Context struct {
 	TablePartitions Partitions
 	Peers           []Peer
 	IP              string
+	DB              *sql.DB
+	Logger          *logrus.Logger
 	IsDebugLocal    bool
 }

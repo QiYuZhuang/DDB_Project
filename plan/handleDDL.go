@@ -18,10 +18,10 @@ func new_col_(create_col string) (meta.Column, error) {
 
 	name_type_ := strings.Split(strings.Trim(create_col, " "), " ")
 	new_col.ColumnName = name_type_[0]
-	if strings.Contains(name_type_[1], "INT") {
-		new_col.Type = "int"
-	} else if strings.Contains(name_type_[1], "CHAR") {
-		new_col.Type = "string"
+	if utils.ContainString(name_type_[1], "INT", true) {
+		new_col.Type = meta.Int32
+	} else if utils.ContainString(name_type_[1], "CHAR", true) {
+		new_col.Type = meta.Varchar
 	} else {
 		err = errors.New("todo type")
 	}
@@ -65,10 +65,10 @@ func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, e
 	// 	ColumnName string `json:"col_name"`
 	// 	Type       string `json:"type"`
 	// }
-	if strings.EqualFold(partition_meta.FragType, "HORIZONTAL") {
+	if partition_meta.FragType == meta.Horizontal {
 		// directly replace table NAME
 		for frag_index := range partition_meta.HFragInfos {
-			site_name_ := partition_meta.SiteInfos[frag_index].Name
+			site_name_ := partition_meta.HFragInfos[frag_index].FragName
 			var sql_router_ meta.SqlRouter
 			sql_router_.Site_ip = partition_meta.SiteInfos[frag_index].IP
 			sql_router_.Sql = sql
@@ -95,7 +95,7 @@ func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, e
 				// find col_ in current fragment
 				is_find_ := false
 				for _, col_ := range frag_.ColumnName {
-					if strings.Contains(create_col, col_) {
+					if utils.ContainString(create_col, col_, true) {
 						is_find_ = true
 						break
 					}
@@ -118,11 +118,11 @@ func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, e
 			}
 
 			if covered_frag_col != len(frag_.ColumnName) {
-				err = errors.New("Dont cover all cols in frag " + frag_.SiteName + " in table " + tablename)
+				err = errors.New("Dont cover all cols in frag " + frag_.FragName + " in table " + tablename)
 				break
 			}
 			per.Site_ip = partition_meta.SiteInfos[frag_index_].IP
-			per.Sql = "create table " + partition_meta.SiteInfos[frag_index_].Name + " ( " + col_sql_str + " )"
+			per.Sql = "create table " + partition_meta.VFragInfos[frag_index_].FragName + " ( " + col_sql_str + " )"
 			ret = append(ret, per)
 		}
 	}
@@ -170,8 +170,13 @@ func HandleDropTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, err
 		return ret, err
 	}
 
-	for _, site_info := range partition_meta.SiteInfos {
-		site_name_ := site_info.Name
+	for idx, site_info := range partition_meta.SiteInfos {
+		var site_name_ string
+		if partition_meta.FragType == meta.Horizontal {
+			site_name_ = partition_meta.HFragInfos[idx].FragName
+		} else if partition_meta.FragType == meta.Vertical {
+			site_name_ = partition_meta.VFragInfos[idx].FragName
+		}
 		var sql_router_ meta.SqlRouter
 		sql_router_.Site_ip = site_info.IP
 		sql_router_.Sql = sql
@@ -191,11 +196,19 @@ func HandlePartitionSQL(ctx meta.Context, sql_str string) (meta.Partition, error
 	// 	VFragInfos []VFragInfo `json:"vertical_fragmentation"`
 	// }
 	var partition meta.Partition
+	var frag_type meta.PartitionStrategy
 	var err error
 
 	partition.TableName = utils.GetMidStr(sql_str, "|", "|")
 
-	frag_type := utils.GetMidStr(sql_str, "[", "]")
+	frag_type_str := utils.GetMidStr(sql_str, "[", "]")
+	if utils.ContainString(frag_type_str, "horizontal", true) {
+		frag_type = meta.Horizontal
+	} else if utils.ContainString(frag_type_str, "vertical", true) {
+		frag_type = meta.Vertical
+	} else {
+		frag_type = meta.NoStrategy
+	}
 	site_ips := strings.Split(utils.GetMidStr(sql_str, "(", ")"), ",")
 	site_details := strings.Split(utils.GetMidStr(sql_str, "{", "}"), ";")
 	var site_names []string
@@ -211,9 +224,10 @@ func HandlePartitionSQL(ctx meta.Context, sql_str string) (meta.Partition, error
 		site_info.IP = site_ips[index_]
 
 		site_detail := strings.Split(site_details[index_], ":")
-		site_info.Name = strings.Trim(strings.Trim(site_detail[0], "\""), "'")
+		// TODO:
+		site_info.FragName = strings.Trim(strings.Trim(site_detail[0], "\""), "'")
 
-		site_names = append(site_names, site_info.Name)
+		site_names = append(site_names, site_info.FragName)
 		site_conds = append(site_conds, site_detail[1])
 
 		partition.SiteInfos = append(partition.SiteInfos, site_info)
@@ -221,7 +235,7 @@ func HandlePartitionSQL(ctx meta.Context, sql_str string) (meta.Partition, error
 
 	partition.FragType = frag_type
 
-	if strings.EqualFold(frag_type, "HORIZONTAL") {
+	if frag_type == meta.Horizontal {
 		// create partition on |PUBLISHER| [horizontal]
 		// at (10.77.110.145, 10.77.110.146, 10.77.110.145, 10.77.110.146)
 		// where {
@@ -290,7 +304,7 @@ func HandlePartitionSQL(ctx meta.Context, sql_str string) (meta.Partition, error
 		for index_ := range site_ips {
 			var cur_frag meta.VFragInfo
 			cond_ := site_conds[index_]
-			cur_frag.SiteName = site_names[index_]
+			cur_frag.FragName = site_names[index_]
 			//
 			cols_ := strings.Split(cond_, ",")
 			for _, col_ := range cols_ {

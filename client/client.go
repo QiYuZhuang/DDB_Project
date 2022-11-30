@@ -49,7 +49,8 @@ func main() {
 			break
 		}
 		// wait_for_res
-		buf := make([]byte, 1024)
+		max_buf_size := 100 * (1 << 20)
+		buf := make([]byte, max_buf_size)
 		n, err := conn.Read(buf)
 		if err != nil {
 			log.Fatalln("read error")

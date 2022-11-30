@@ -3,7 +3,7 @@ package plan
 import (
 	"errors"
 	"fmt"
-	"project/meta"
+	meta "project/meta"
 	utils "project/utils"
 	"sort"
 	"strconv"
@@ -20,7 +20,7 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 	var conds_ []ast.ExprNode
 	var cols_ []string
 
-	if strings.EqualFold(frag_info.FragType, "HORIZONTAL") {
+	if frag_info.FragType == meta.Horizontal {
 		for _, frag_ := range frag_info.HFragInfos {
 			if strings.EqualFold(frag_.FragName, frag_name) {
 				for _, cond_ := range frag_.Conditions {
@@ -81,12 +81,33 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 		}
 	} else {
 		for _, frag_ := range frag_info.VFragInfos {
-			if strings.EqualFold(frag_.SiteName, frag_name) {
+			if strings.EqualFold(frag_.FragName, frag_name) {
 				cols_ = append(cols_, frag_.ColumnName...)
 			}
 		}
 	}
 	return conds_, cols_
+}
+
+func GetFilterCondition(frags_ meta.Partition, frag_name string) ([]string, []string, error) {
+	// filter condition
+	var condition_str_ []string
+
+	conds_, col_str_ := InitFragWithCondition(frags_, frag_name)
+
+	if frags_.FragType == meta.Horizontal {
+		for _, cond_ := range conds_ {
+			expr, ok := cond_.(*ast.BinaryOperationExpr)
+			if !ok {
+				return condition_str_, col_str_, errors.New("fail to type cast into BinaryOperationExpr")
+			}
+			condition_str_ = append(condition_str_, TransExprNode2Str(expr))
+		}
+	}
+	sort.Strings(condition_str_)
+	sort.Strings(col_str_)
+	//
+	return condition_str_, col_str_, nil
 }
 
 func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
@@ -109,16 +130,16 @@ func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
 
 	// find and expand the frag tables
 	for _, site_info := range frags_.SiteInfos {
-		if strings.EqualFold(frags_.FragType, "HORIZONTAL") {
+		if frags_.FragType == meta.Horizontal {
 			p.Type = UnionType
 			node := PlanTreeNode{
 				Type:          DataSourceType,
-				FromTableName: site_info.Name,
+				FromTableName: site_info.FragName,
 				ExecuteSiteIP: site_info.IP,
 				DestSiteIP:    ctx.IP,
 			}.Init()
 			//
-			conds_, _ := InitFragWithCondition(frags_, site_info.Name)
+			conds_, _ := InitFragWithCondition(frags_, site_info.FragName)
 			node.Conditions = append(node.Conditions, conds_...)
 			p.AddChild(node)
 
@@ -126,11 +147,11 @@ func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
 			p.Type = JoinType
 			node := PlanTreeNode{
 				Type:          DataSourceType,
-				FromTableName: site_info.Name,
+				FromTableName: site_info.FragName,
 				ExecuteSiteIP: site_info.IP,
 				DestSiteIP:    ctx.IP,
 			}.Init()
-			_, cols_ := InitFragWithCondition(frags_, site_info.Name)
+			_, cols_ := InitFragWithCondition(frags_, site_info.FragName)
 			// node.ColsName = append(node.ColsName, cols_...)
 			fmt.Println(cols_)
 			p.AddChild(node)
@@ -169,7 +190,7 @@ func PushDownPredicates(ctx meta.Context, frag_node *PlanTreeNode, where *PlanTr
 			continue
 		} else if left == AttrType && right == ValueType {
 			cur_table_name := strings.ToUpper(left_attr.Name.Table.String())
-			if strings.Contains(frag_node.FromTableName, cur_table_name) {
+			if utils.ContainString(frag_node.FromTableName, cur_table_name, true) {
 				frag_node.Conditions = append(frag_node.Conditions, expr)
 				frag_node.ConditionsStr = append(frag_node.ConditionsStr, TransExprNode2Str(expr))
 				fmt.Println("Condition [" + strconv.FormatInt(int64(index_), 10) + "] adds to " + frag_node.FromTableName)
@@ -202,7 +223,7 @@ func PushDownProjections(ctx meta.Context, frag_node *PlanTreeNode, where *PlanT
 				continue
 			} else if left == AttrType && right == ValueType {
 				cur_table_name := strings.ToUpper(left_attr.Name.Table.String())
-				if strings.Contains(frag_node.FromTableName, cur_table_name) {
+				if utils.ContainString(frag_node.FromTableName, cur_table_name, true) {
 					if !frag_projection.Contains(left_attr.Name.Name.String()) {
 						frag_projection.Add(left_attr.Name.Name.String())
 						fmt.Println("ColName from Condition [" + strconv.FormatInt(int64(index_), 10) + "] :" + left_attr.Name.Name.String() + " adds to " + frag_node.FromTableName)
@@ -224,11 +245,11 @@ func PushDownProjections(ctx meta.Context, frag_node *PlanTreeNode, where *PlanT
 		for index_, p_ := range proj.ColsName {
 			table_name := strings.Split(p_, ".")[0]
 			col_name := strings.Split(p_, ".")[1]
-			if !strings.Contains(frag_node.FromTableName, table_name) {
+			if !utils.ContainString(frag_node.FromTableName, table_name, true) {
 				continue
 			}
 			col_exists, _ := RetureType(ctx.TableMetas, frag_node.FromTableName, col_name)
-			if len(col_exists) > 0 {
+			if col_exists != meta.FieldTypeNum {
 				if !frag_projection.Contains(col_name) {
 					frag_projection.Add(col_name)
 					fmt.Println("ColName [" + strconv.FormatInt(int64(index_), 10) + "]: " + p_ + " adds to " + frag_node.FromTableName)
@@ -236,7 +257,7 @@ func PushDownProjections(ctx meta.Context, frag_node *PlanTreeNode, where *PlanT
 			}
 		}
 
-		if strings.EqualFold(frag_type, "HORIZONTAL") {
+		if frag_type == meta.Horizontal {
 			it := frag_projection.Iterator()
 			for elem := range it.C {
 				frag_node.ColsName = append(frag_node.ColsName, elem.(string))
@@ -246,9 +267,9 @@ func PushDownProjections(ctx meta.Context, frag_node *PlanTreeNode, where *PlanT
 			// TODO: has bug...
 			frag_projection_other := mapset.NewSet()
 			for _, partition := range ctx.TablePartitions.Partitions {
-				if strings.Contains(frag_node.FromTableName, partition.TableName) {
+				if utils.ContainString(frag_node.FromTableName, partition.TableName, true) {
 					for _, frag_ := range partition.VFragInfos {
-						if frag_.SiteName != frag_node.FromTableName {
+						if frag_.FragName != frag_node.FromTableName {
 							// get other table v-info
 							for _, col_ := range frag_.ColumnName {
 								frag_projection_other.Add(col_)
@@ -304,7 +325,7 @@ func GetPredicatePruning(ctx meta.Context, frag_node *PlanTreeNode) error {
 
 			switch expr.Op {
 			case opcode.EQ:
-				if type_ == "string" {
+				if type_ == meta.Varchar {
 					new_range.LValueStr = right_val.GetDatumString()
 					new_range.RValueStr = right_val.GetDatumString()
 				} else {
@@ -312,7 +333,7 @@ func GetPredicatePruning(ctx meta.Context, frag_node *PlanTreeNode) error {
 					new_range.RValueInt = int(right_val.GetInt64())
 				}
 			case opcode.LT:
-				if type_ == "string" {
+				if type_ == meta.Varchar {
 					new_range.LValueStr = ""
 					new_range.RValueStr = right_val.GetDatumString()
 				} else {
@@ -320,7 +341,7 @@ func GetPredicatePruning(ctx meta.Context, frag_node *PlanTreeNode) error {
 					new_range.RValueInt = int(right_val.GetInt64())
 				}
 			case opcode.GE, opcode.GT:
-				if type_ == "string" {
+				if type_ == meta.Varchar {
 					new_range.LValueStr = right_val.GetDatumString()
 					new_range.RValueStr = ""
 				} else {
@@ -338,7 +359,7 @@ func GetPredicatePruning(ctx meta.Context, frag_node *PlanTreeNode) error {
 				// exists, check if overlap
 				cur_range := condition_range[attr_num]
 				if expr.Op == opcode.EQ {
-					if type_ == "string" {
+					if type_ == meta.Varchar {
 						if cur_range.LValueStr != new_range.LValueStr {
 							frag_node.IsPruned = true
 							fmt.Println("frag_node " + frag_node.FromTableName + " IS PRUNED")
@@ -354,7 +375,7 @@ func GetPredicatePruning(ctx meta.Context, frag_node *PlanTreeNode) error {
 				} else {
 					// [L,    R]
 					//    [L,R]
-					if type_ == "string" {
+					if type_ == meta.Varchar {
 						if condition_range[attr_num].LValueStr == "" {
 							cur_range.LValueStr = new_range.LValueStr
 						} else {
@@ -717,10 +738,10 @@ func FindJoinNode(table_name_left string, table_name string, UnPrunedNodeName []
 	// output: [ORDERS.3, ORDERS.4]
 	var res string
 	for i, cur := range UnPrunedNodeName {
-		if strings.Contains(cur, table_name) && strings.Contains(cur, table_name_left) {
+		if utils.ContainString(cur, table_name, true) && utils.ContainString(cur, table_name_left, true) {
 			UnPrunedNodeName[i] = ""
 		} else {
-			if strings.Contains(cur, table_name) {
+			if utils.ContainString(cur, table_name, true) {
 				res += strings.Replace(cur, table_name, "", -1) + ", " //
 			}
 		}
@@ -898,7 +919,7 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 }
 
 type PartitionInfo struct {
-	PartitionType string
+	PartitionType meta.PartitionStrategy
 	HFrag         meta.HFragInfo
 	VFrag         meta.VFragInfo
 }
@@ -917,7 +938,7 @@ func GetPartitionMeta(ctx meta.Context, frag_name string) (PartitionInfo, error)
 	}
 	ret.PartitionType = partition_meta.FragType
 
-	if strings.EqualFold(ret.PartitionType, "HORIZONTAL") {
+	if partition_meta.FragType == meta.Horizontal {
 		//
 		for _, partition_ := range partition_meta.HFragInfos {
 			if strings.EqualFold(partition_.FragName, frag_name) {
@@ -928,7 +949,7 @@ func GetPartitionMeta(ctx meta.Context, frag_name string) (PartitionInfo, error)
 	} else {
 		// Vertical
 		for _, partition_ := range partition_meta.VFragInfos {
-			if strings.EqualFold(partition_.SiteName, frag_name) {
+			if strings.EqualFold(partition_.FragName, frag_name) {
 				ret.VFrag = partition_
 				break
 			}
@@ -942,7 +963,7 @@ func filterCondition(partition_info PartitionInfo, from *PlanTreeNode) ([]ast.Ex
 	var condition_ []ast.ExprNode
 	var condition_str_ []string
 
-	if strings.EqualFold(partition_info.PartitionType, "VERTICAL") {
+	if partition_info.PartitionType == meta.Vertical {
 		for i_, cond_ := range from.Conditions {
 			is_in_ := true
 
@@ -1001,7 +1022,7 @@ func filterColumns(partition_info PartitionInfo, from *PlanTreeNode) []string {
 	// filter columns
 	var colsName []string
 
-	if strings.EqualFold(partition_info.PartitionType, "VERTICAL") {
+	if partition_info.PartitionType == meta.Vertical {
 		for i_, cur_cond := range from.ColsName {
 			is_in_ := false
 			for _, col := range partition_info.VFrag.ColumnName {

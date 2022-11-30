@@ -3,9 +3,12 @@ package core
 import (
 	"database/sql"
 	"errors"
+	"os/user"
+	"path/filepath"
 	"project/meta"
 	"project/mysql"
-	"strings"
+	"project/utils"
+	"strconv"
 	"time"
 )
 
@@ -17,6 +20,8 @@ const (
 	HeartBeat     MessageType = 2
 	HeartBeatAck  MessageType = 3
 	// add more message type here
+	DataLoadRequest  MessageType = 4
+	DataLoadResponse MessageType = 5
 )
 
 /*
@@ -24,17 +29,18 @@ const (
  * TxnId is the identify of the query(out of order)
  */
 type Message struct {
-	Type    MessageType `json:"type"`
-	Length  uint32      `json:"length"`
-	Src     string      `json:"src_machine_id"`
-	Dst     string      `json:"dest_machine_id"`
-	TxnId   uint64      `json:"txn_id"`
-	QueryId uint16      `json:"query_id"`
-	Query   string      `json:"query"`
-	Result  sql.Result  `json:"result"`
-	// Rows    sql.Rows      `json:"rows"`
-	QueryResult meta.QueryResults `json: query_result`
-	Time        time.Duration     `json:"time"`
+	Type        MessageType       `json:"type"`
+	Length      uint32            `json:"length"`
+	Src         string            `json:"src_machine_id"`
+	Dst         string            `json:"dest_machine_id"`
+	TxnId       uint64            `json:"txn_id"`
+	QueryId     uint16            `json:"query_id"`
+	Query       string            `json:"query"`
+	FilePath    string            `json:"data_file_path"`
+	Result      sql.Result        `json:"result"`
+	RowCnt      int               `json:"row_cnt"`
+	QueryResult meta.QueryResults `json:"query_result"`
+	Time        time.Time         `json:"time"`
 	Error       bool              `json:"error"`
 }
 
@@ -44,6 +50,7 @@ func NewMessage(t MessageType, src string, dst string, txn_id uint64) *Message {
 		Src:   src,
 		Dst:   dst,
 		TxnId: txn_id,
+		Time:  time.Now(),
 	}
 }
 
@@ -62,6 +69,8 @@ func (m Message) MessageHandler(c *Coordinator) error {
 		err = m.HeartBeatHandler(c)
 	case HeartBeatAck:
 		err = m.HeartBeatAckHandler(c)
+	case DataLoadRequest:
+	case DataLoadResponse:
 	default:
 		l.Errorln("Unsupport message type, message", m)
 	}
@@ -77,29 +86,78 @@ func FlushAndPush(msg *Message, c *Coordinator) error {
 	return nil
 }
 
+func chownScpRemove(username string, src_path string, dst_path string, dst_ip string) error {
+	err := utils.Chown(username, src_path, false)
+	if err != nil {
+		return err
+	}
+
+	err = utils.ScpFile(username, dst_ip, src_path, dst_ip, false)
+	return err
+}
+
 func (m Message) QueryRequestHandler(c *Coordinator) error {
-	// sql := m.Query
-	// run (sql, src, txn_id)
 	l := c.Context.Logger
 	l.Infoln("query is ", m.Query)
-	err := c.Context.DB.Ping()
+	db := c.Context.DB
+	err := db.Ping()
 	if err != nil {
 		l.Errorln("database ping failed")
 	}
+
+	u, _ := user.Current()
+
 	resp := NewMessage(QueryResponse, m.Dst, m.Src, m.TxnId)
 	resp.SetQueryId(m.QueryId)
-	if strings.Contains(m.Query, "SELECT") {
-		rows, err := c.Context.DB.Query(m.Query)
+	if utils.ContainString(m.Query, "SELECT", true) {
+		rows, err := db.Query(m.Query)
 		if err != nil {
 			l.Errorln("exec failed", err)
 		}
 
-		result := mysql.ParseRows(rows)
-		resp.SetQueryResult(result)
+		_, row_cnt := mysql.ParseRows(rows)
+		// resp.SetQueryResult(result)
+		resp.SetRowCnt(row_cnt)
+
+		// select into tmp file
+		tmp_path := "/tmp/data/" + strconv.FormatInt(int64(m.TxnId), 10) + "_" + strconv.FormatInt(int64(m.QueryId), 10) + ".csv"
+		tmp_sql := utils.GenerateSelectIntoFileSql(m.Query, tmp_path, "|", "\"")
+		_, err = db.Exec(tmp_sql)
+		if err != nil {
+			l.Errorln("select into file failed. err: ", err.Error())
+		}
+
+		dst_path := "/home/" + u.Username
+		err = chownScpRemove(u.Username, tmp_path, dst_path, m.Src)
+		if err != nil {
+			l.Errorln("scp, rm failed, error is", err.Error())
+		}
+
+		resp.SetFilePath(dst_path)
 	} else {
-		res, err := c.Context.DB.Exec(m.Query)
+		is_data_loader := m.FilePath != ""
+
+		if is_data_loader {
+			_, filename := filepath.Split(m.FilePath)
+			src_path := "/home/" + u.Username + "/" + filename
+			err := utils.MvFile(src_path, m.FilePath, false)
+			if err != nil {
+				l.Errorln("mv file failed, error is ", err.Error())
+			}
+			err = utils.Chown("mysql", m.FilePath, false)
+			if err != nil {
+				l.Errorln("chown failed, error is ", err.Error())
+			}
+		}
+		res, err := db.Exec(m.Query)
 		if err != nil {
 			l.Errorln("exec failed", err)
+		}
+		if is_data_loader {
+			err = utils.RmFile(m.FilePath, false)
+			if err != nil {
+				l.Errorln("delete failed, error is ", err.Error())
+			}
 		}
 		resp.SetResult(res)
 	}
@@ -136,6 +194,8 @@ func (m Message) QueryResponseHandler(c *Coordinator) error {
 		}
 
 		// txn.Results[query_id] = m.Result
+		txn.TmpResultInFile[query_id] = m.FilePath
+		txn.EffectRows[query_id] = m.RowCnt
 		txn.QueryResult[query_id] = m.QueryResult
 		txn.Responses[query_id] = true
 		// l.Errorln("not a vaild sub query result")
@@ -183,11 +243,24 @@ func (m *Message) SetError(is_error bool) {
 	m.Error = is_error
 }
 
+func (m *Message) SetDataLoadFile(filepath string) {
+	m.FilePath = filepath
+}
+
+func (m *Message) SetRowCnt(row_cnt int) {
+	m.RowCnt = row_cnt
+}
+
+func (m *Message) SetFilePath(file_path string) {
+	m.FilePath = file_path
+}
+
 func (c *Coordinator) NewQueryRequestMessage(query_id uint16, router meta.SqlRouter, txn *meta.Transaction) *Message {
 	// router
 	message := NewMessage(QueryRequest, c.Context.DB_host, router.Site_ip, txn.TxnId)
 	message.SetQuery(router.Sql)
 	message.SetQueryId(query_id)
+	message.SetDataLoadFile(router.File_path)
 	message.SetMessageLength(0)
 	return message
 }

@@ -207,7 +207,7 @@ import (
 
 func TestParseDebugLocal(t *testing.T) {
 	// read partion meta info
-	jsonFileDir := "/home/bigdata/Course3-DDB/DDB_Project/config/partition.json"
+	jsonFileDir := "/home/zqs/DDB_Project/config/partition.json"
 	jsonFile, err := os.Open(jsonFileDir)
 	if err != nil {
 		fmt.Println(err)
@@ -221,7 +221,7 @@ func TestParseDebugLocal(t *testing.T) {
 	////
 
 	// read table meta info
-	jsonFileDir = "/home/bigdata/Course3-DDB/DDB_Project/config/table_meta.json"
+	jsonFileDir = "/home/zqs/DDB_Project/config/table_meta.json"
 	jsonFile, err = os.Open(jsonFileDir)
 	if err != nil {
 		fmt.Println(err)
@@ -255,6 +255,9 @@ func TestParseDebugLocal(t *testing.T) {
 		IsDebugLocal:    true,
 	}
 
+	a, b, _ := plan.GetFilterCondition(ctx.TablePartitions.Partitions[1], "CUSTOMER_1")
+	fmt.Println(a, b)
+
 	// parser and hanlder insert and select
 	// sql_str := "insert into publisher values(200000, 'hello world');"
 
@@ -282,6 +285,7 @@ func TestParseDebugLocal(t *testing.T) {
 			 "PUBLISHER_3" : ID >= 104000 and NATION = 'PRC'; \
 			 "PUBLISHER_4" : ID >= 104000 and NATION = 'USA' \
 			};`,
+		"LOAD DATA LOCAL INFILE '/tmp/data/publisher.csv' INTO TABLE publisher FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\r\n' (ID, NAME, NATION);",
 		// "create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
 		// `create partition on |CUSTOMER| [vertical]
 		// 	at (10.77.110.145, 10.77.110.146)

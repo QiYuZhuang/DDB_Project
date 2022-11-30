@@ -9,12 +9,12 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "/home/bigdata/Course3-DDB/DDB_Project/main/main.go",
+            "program": "/home/zqy/go/DDB_Project/main/main.go",
             "args": [
                 "-host",
                 "10.77.110.146"
             ],
-            "cwd": "/home/bigdata/Course3-DDB/DDB_Project"
+            "cwd": "/home/zqy/go/DDB_Project"
         }
     ]
 }
