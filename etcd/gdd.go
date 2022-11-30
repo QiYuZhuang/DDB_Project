@@ -180,7 +180,7 @@ func SaveTabletoEtcd(table meta.TableMeta) error {
 		col := table.Columns[i]
 
 		k3 := k2 + "/" + col.ColumnName
-		v3 := col.Type
+		v3, _ := meta.FieldType2String(col.Type)
 
 		//通过/tables/table/columnname得到type
 		PutKey(k3, v3)
@@ -214,7 +214,7 @@ func SaveFragmenttoEtcd(partition meta.Partition) error {
 
 	mode := partition.FragType
 	switch mode {
-	case "HORIZONTAL":
+	case meta.Horizontal:
 		k1 := "/patitions/" + partition.TableName
 		v1 := "HORIZONTAL"
 
@@ -261,13 +261,13 @@ func SaveFragmenttoEtcd(partition meta.Partition) error {
 		}
 
 		for i := 0; i < len(partition.SiteInfos); i++ {
-			k5 := k1 + "/" + partition.SiteInfos[i].Name + "/ip"
+			k5 := k1 + "/" + partition.SiteInfos[i].FragName + "/ip"
 			v5 := partition.SiteInfos[i].IP
 
 			PutKey(k5, v5)
 		}
 
-	case "VERTICAL":
+	case meta.Vertical:
 		k1 := "/patitions/" + partition.TableName
 		v1 := "VERTICAL"
 
@@ -277,7 +277,7 @@ func SaveFragmenttoEtcd(partition meta.Partition) error {
 		k2 := k1 + "VERTICAL"
 		v2 := ""
 		for i := 0; i < len(partition.VFragInfos); i++ {
-			v2 += partition.VFragInfos[i].SiteName
+			v2 += partition.VFragInfos[i].FragName
 			v2 += ","
 		}
 		v2 = v2[:len(v2)-1]
@@ -285,8 +285,8 @@ func SaveFragmenttoEtcd(partition meta.Partition) error {
 		PutKey(k2, v2)
 
 		for i := 0; i < len(partition.VFragInfos); i++ {
-			k3 := k2 + "/" + partition.VFragInfos[i].SiteName
-			k4 := k1 + "/" + partition.SiteInfos[i].Name + "/ip"
+			k3 := k2 + "/" + partition.VFragInfos[i].FragName
+			k4 := k1 + "/" + partition.SiteInfos[i].FragName + "/ip"
 
 			v3 := ""
 			for j := 0; j < len(partition.VFragInfos[i].ColumnName); j++ {
@@ -300,7 +300,7 @@ func SaveFragmenttoEtcd(partition meta.Partition) error {
 			PutKey(k4, v4)
 		}
 	default:
-		err := errors.New("wrong fragment type!")
+		err := errors.New("wrong fragment type")
 		return err
 	}
 	return nil
@@ -357,14 +357,15 @@ func getTableColumns(tablename string) ([]meta.Column, error) {
 	return res, nil
 }
 
-func getTableColumnType(tablename string, columnname string) (string, error) {
+func getTableColumnType(tablename string, columnname string) (meta.FieldType, error) {
 	key := "/tables/" + tablename + "/" + columnname
 	columntype, err := GetKey(key)
 	if err != nil {
 		fmt.Println("get table column type failed")
-		return "", err
+		return meta.FieldTypeNum, err
 	}
-	return bytetoString(columntype), err
+	field_type, err := meta.String2Field(bytetoString(columntype))
+	return field_type, err
 }
 
 func getTableMetas() (meta.TableMetas, error) {
@@ -376,7 +377,9 @@ func getTableMetas() (meta.TableMetas, error) {
 	}
 	for i := 0; i < len(tablenames); i++ {
 		tablename := tablenames[i]
-
+		if tablename == "" {
+			continue
+		}
 		tablemeta, err := getTableMeta(tablename)
 		if err != nil {
 			fmt.Println("get table metas failed")
@@ -431,8 +434,8 @@ func GetFragmentSite(tablename string) ([]meta.SiteInfo, error) {
 		}
 
 		siteinfo := meta.SiteInfo{
-			Name: sitename,
-			IP:   bytetoString(ipget),
+			FragName: sitename,
+			IP:       bytetoString(ipget),
 		}
 		res = append(res, siteinfo)
 	}
@@ -563,7 +566,7 @@ func GetVFragInfo(tablename string, sitename string) (meta.VFragInfo, error) {
 	}
 	columnlist := strings.Split(bytetoString(columns), ",")
 	vfrag := meta.VFragInfo{
-		SiteName:   sitename,
+		FragName:   sitename,
 		ColumnName: columnlist,
 	}
 	return vfrag, nil
@@ -608,7 +611,7 @@ func GetPartition(tablename string) (meta.Partition, error) {
 		partition := meta.Partition{
 			TableName:  tablename,
 			SiteInfos:  siteinfos,
-			FragType:   fragmentype,
+			FragType:   meta.Horizontal,
 			HFragInfos: hfraginfo,
 			VFragInfos: vfraginfo,
 		}
@@ -626,7 +629,7 @@ func GetPartition(tablename string) (meta.Partition, error) {
 		partition := meta.Partition{
 			TableName:  tablename,
 			SiteInfos:  siteinfos,
-			FragType:   fragmentype,
+			FragType:   meta.Vertical,
 			HFragInfos: hfraginfo,
 			VFragInfos: vfraginfo,
 		}

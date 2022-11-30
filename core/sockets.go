@@ -10,7 +10,8 @@ import (
 
 func ConnectionHandler(c *Coordinator, conn net.Conn) {
 	l := c.Context.Logger
-	buf := make([]byte, 4096)
+	max_buf_size := 20 * (1 << 20)
+	buf := make([]byte, max_buf_size)
 	defer conn.Close()
 	for {
 		l.Debugln("wait for data")
@@ -23,7 +24,7 @@ func ConnectionHandler(c *Coordinator, conn net.Conn) {
 
 		// buf possibly json format
 		// transform to struct Message and call MessageHandler
-		l.Infoln("var ki Message sql: ", n, buf, string(buf))
+		// l.Infoln("var ki Message sql: ", n, buf, string(buf))
 
 		cur_pos := 0
 		for cur_pos < n {
@@ -33,7 +34,7 @@ func ConnectionHandler(c *Coordinator, conn net.Conn) {
 			cur_pos += 4
 
 			json.Unmarshal(buf[cur_pos:cur_pos+int(data_len)], &ki)
-			l.Infoln("var ki Message sql: ", ki.Query, n, buf, string(buf))
+			// l.Infoln("var ki Message sql: ", ki.Query, n, buf, string(buf))
 			ki.MessageHandler(c)
 
 			cur_pos += int(data_len)

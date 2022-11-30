@@ -5,15 +5,15 @@
             "columns": [
                 {
                     "col_name": "ID",
-                    "type": "int"
+                    "type": 0
                 },
                 {
                     "col_name": "NAME",
-                    "type": "string"
+                    "type": 1
                 },
                 {
                     "col_name": "NATION",
-                    "type": "string"
+                    "type": 1
                 }
             ]
         }, 
@@ -22,15 +22,15 @@
             "columns": [
                 {
                     "col_name": "ID",
-                    "type": "int"
+                    "type": 0
                 },
                 {
                     "col_name": "NAME",
-                    "type": "string"
+                    "type": 1
                 },
                 {
                     "col_name": "RANK_",
-                    "type": "int"
+                    "type": 0
                 }
             ]
         },
@@ -39,15 +39,15 @@
             "columns": [
                 {
                     "col_name": "CUSTOMER_ID",
-                    "type": "int"
+                    "type": 0
                 },
                 {
                     "col_name": "BOOK_ID",
-                    "type": "int"
+                    "type": 0
                 },
                 {
                     "col_name": "QUANTITY",
-                    "type": "int"
+                    "type": 0
                 }
             ]
         }, 
@@ -56,23 +56,23 @@
             "columns": [
                 {
                     "col_name": "ID",
-                    "type": "int"
+                    "type": 0
                 },
                 {
                     "col_name": "NAME",
-                    "type": "string"
+                    "type": 1
                 },
                 {
                     "col_name": "AUTHORS",
-                    "type": "string"
+                    "type": 1
                 }, 
                 {
                     "col_name": "PUBLISHER_ID",
-                    "type": "int"
+                    "type": 0
                 },
                 {
                     "col_name": "COPIES",
-                    "type": "int"
+                    "type": 0
                 }
             ]
         }

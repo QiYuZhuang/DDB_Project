@@ -3,7 +3,7 @@ package config
 import (
 	"database/sql"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 type Context struct {
@@ -15,6 +15,6 @@ type Context struct {
 	Debug             bool   `default:"false"` // correctness test(debug)
 	Fragment_strategy string `default:"none"`
 	Peer_file         string `default:"/home/bigdata/Course3-DDB/DDB_Project/config/cluster.ips"`
-	Logger            *log.Logger
+	Logger            *logrus.Logger
 	DB                *sql.DB
 }

@@ -7,6 +7,7 @@ import (
 	"log"
 	"project/etcd"
 	"project/meta"
+	"project/utils"
 	"strconv"
 	"strings"
 
@@ -123,7 +124,7 @@ type InsertValue struct {
 }
 
 type DataRange struct {
-	FieldType string
+	FieldType meta.FieldType
 	LValueStr string
 	RValueStr string
 	//
@@ -179,8 +180,8 @@ func SwapNode(a *PlanTreeNode, b *PlanTreeNode) {
 	*b = tem
 }
 
-func ReturnFragType(ctx meta.Context, table_name string) string {
-	var ret string
+func ReturnFragType(ctx meta.Context, table_name string) meta.PartitionStrategy {
+	var ret meta.PartitionStrategy
 	for _, partition := range ctx.TablePartitions.Partitions {
 		if strings.EqualFold(partition.TableName, table_name) {
 			//
@@ -207,7 +208,7 @@ func FindMainTableNode(ctx meta.Context, from *PlanTreeNode, table_name string) 
 			child_num = cur_ptr.GetChildrenNum()
 			for i := 0; i < child_num; i++ {
 				cur_table_ptr := cur_ptr.GetChild(i)
-				if strings.Contains(cur_table_ptr.FromTableName, strings.ToUpper(table_name)) {
+				if utils.ContainString(cur_table_ptr.FromTableName, table_name, true) {
 					ret = cur_table_ptr
 					index_ret = i
 					break
@@ -222,9 +223,9 @@ func FindMainTableNode(ctx meta.Context, from *PlanTreeNode, table_name string) 
 	return index_ret, ret
 }
 
-func RetureType(table_metas meta.TableMetas, table_name string, col_name string) (string, error) {
+func RetureType(table_metas meta.TableMetas, table_name string, col_name string) (meta.FieldType, error) {
 	for _, table := range table_metas.TableMetas {
-		if strings.Contains(table_name, table.TableName) {
+		if utils.ContainString(table_name, table.TableName, true) {
 			for _, col := range table.Columns {
 				if strings.EqualFold(col.ColumnName, col_name) {
 					return col.Type, nil
@@ -232,23 +233,25 @@ func RetureType(table_metas meta.TableMetas, table_name string, col_name string)
 			}
 		}
 	}
-	return "", errors.New("not find this col" + col_name + table_name)
+	return meta.FieldTypeNum, errors.New("not find this col" + col_name + table_name)
 }
 
-func GetFragType(ctx meta.Context, frag_name string) (string, error) {
-	var str string
+func GetFragType(ctx meta.Context, frag_name string) (meta.PartitionStrategy, error) {
+	var frag_type meta.PartitionStrategy
 	var err error
+
+	frag_type = meta.NoStrategy
 	//
 	for _, partition := range ctx.TablePartitions.Partitions {
-		if strings.Contains(frag_name, partition.TableName) {
-			str = partition.FragType
+		if utils.ContainString(frag_name, partition.TableName, true) {
+			frag_type = partition.FragType
 			break
 		}
 	}
-	if len(str) == 0 {
+	if frag_type == meta.NoStrategy {
 		err = errors.New("not find frag_name " + frag_name)
 	}
-	return str, err
+	return frag_type, err
 }
 
 func PrintPlanTree(p *PlanTreeNode) string {
@@ -389,7 +392,7 @@ func PrintPlanTreePlot(p *PlanTreeNode) string {
 					cur_val += "]"
 				} else {
 					cur_val = cur_node.FromTableName
-					if strings.Contains(cur_val, "|") {
+					if utils.ContainString(cur_val, "|", true) {
 						cur_val = cur_node.Type.String()
 					}
 				}
@@ -492,11 +495,11 @@ func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
 	var right_str string
 
 	if left == AttrType && right == ValueType {
-		left_str = left_attr.Name.Table.O + "." + left_attr.Name.Name.O
+		left_str = left_attr.Name.Name.O
 		right_str = "\"" + right_val.GetDatumString() + "\""
 	} else if left == AttrType && right == AttrType {
-		left_str = left_attr.Name.Table.O + "." + left_attr.Name.Name.O
-		right_str = right_attr.Name.Table.O + "." + right_attr.Name.Name.O
+		left_str = left_attr.Name.Name.O
+		right_str = right_attr.Name.Name.O
 	} else {
 		fmt.Println("not supported")
 	}
@@ -524,12 +527,14 @@ func ParseAndExecute(ctx meta.Context, sql_str string) (*PlanTreeNode, []meta.Sq
 	}
 	my_parser := parser.New()
 
-	sql_str = strings.ToUpper(sql_str)
+	// sql_str = strings.ToUpper(sql_str)
 	sql_str = strings.Replace(sql_str, "\t", "", -1)
 	sql_str = strings.Replace(sql_str, "\n", "", -1)
 
 	fmt.Println(sql_str)
-	if strings.Contains(sql_str, "PARTITION") {
+	if utils.ContainString(sql_str, "define", true) {
+		// define site1 10.77.110.145:10800, site2 10.77.110.146:10800, site3 10.77.110.148:10800, site4 10.77.110.146:20800;
+	} else if utils.ContainString(sql_str, "PARTITION", true) {
 		sql_str = strings.Replace(sql_str, " ", "", -1)
 		partition_infos, err := HandlePartitionSQL(ctx, sql_str)
 		if err != nil {
@@ -564,6 +569,9 @@ func ParseAndExecute(ctx meta.Context, sql_str string) (*PlanTreeNode, []meta.Sq
 		case *ast.DeleteStmt:
 			fmt.Println("delete") // same as delete
 			ret, err = HandleDelete(ctx, x)
+		case *ast.LoadDataStmt:
+			fmt.Println("load data infile")
+			ret, err = HandleLoadDataInfile(ctx, x)
 		default:
 			// createdb, dropdb, all broadcast
 			ret, err = BroadcastSQL(ctx, x)
