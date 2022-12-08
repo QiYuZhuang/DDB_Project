@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"project/meta"
 	"time"
 )
 
@@ -28,14 +29,14 @@ func ConnectionHandler(c *Coordinator, conn net.Conn) {
 
 		cur_pos := 0
 		for cur_pos < n {
-			var ki Message
+			var ki meta.Message
 
 			data_len := binary.BigEndian.Uint32(buf[cur_pos : cur_pos+4])
 			cur_pos += 4
 
 			json.Unmarshal(buf[cur_pos:cur_pos+int(data_len)], &ki)
 			// l.Infoln("var ki Message sql: ", ki.Query, n, buf, string(buf))
-			ki.MessageHandler(c)
+			MessageHandler(ki, c)
 
 			cur_pos += int(data_len)
 		}
@@ -80,7 +81,7 @@ func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 			// if reflect.TypeOf(m).Name() != "Message" {
 			// 	l.Errorln("when dispatch, message type error", reflect.TypeOf(m).Name())
 			// }
-			m, ok := (i.Value).(Message)
+			m, ok := (i.Value).(meta.Message)
 			if !ok {
 				l.Errorln("element to message failed")
 			}
@@ -111,6 +112,8 @@ func CreateDispatcherSockets(c *Coordinator) {
 			go ClientConnectionHandler(c, i)
 		}
 	}
+
+	go AsyncFlushMessage(c)
 }
 
 func CreateInputSockets(c *Coordinator) {
@@ -142,22 +145,24 @@ func CreateInputSockets(c *Coordinator) {
 	}(&listener)
 }
 
-func FlushMessage(c *Coordinator, m *Message) int {
-	c.d_mutex.Lock()
-	defer c.d_mutex.Unlock()
-
+func FindDestMachineId(peers []meta.Peer, m meta.Message) int {
 	var idx int
+	idx = -1
 
-	for i := 0; i < int(c.Peer_num); i++ {
-		p := c.Peers[i]
+	for i := 0; i < len(peers); i++ {
+		p := peers[i]
 		if p.Ip == m.Dst {
 			idx = int(p.Id)
 			break
 		}
-		if i == int(c.Peer_num)-1 {
-			return -1
-		}
 	}
 
 	return idx
+}
+
+func AsyncFlushMessage(c *Coordinator) {
+	for m := range c.Messages {
+		idx := FindDestMachineId(c.Peers[:], m)
+		c.DispatchMessages[idx].PushBack(m)
+	}
 }

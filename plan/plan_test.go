@@ -380,7 +380,7 @@ func TestParseDebugLocal(t *testing.T) {
 			fmt.Errorf(err.Error())
 			break
 		}
-		select_plan, sql_routers, err := plan.ParseAndExecute(ctx, sql_str)
+		_, select_plan, sql_routers, err := plan.ParseAndExecute(ctx, sql_str)
 		if err != nil {
 			fmt.Errorf(err.Error())
 			break

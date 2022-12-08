@@ -30,10 +30,10 @@ func HandleLoadDataInfile(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter
 	u, _ := user.Current()
 
 	// defer file.Close()
-	var tmp_table_name string
+
 	if partition_meta.FragType == meta.Horizontal {
-		tmp_table_name, err = createTmpTable(table_meta, ctx.DB)
-		if err != nil {
+		tmp_table_name := "TMP_" + table_meta.TableName
+		if err = createTmpTable(tmp_table_name, table_meta, ctx.DB); err != nil {
 			l.Errorln("create tmp table failed, error is ", err.Error())
 			err2 := dropTmpTable(tmp_table_name, ctx.DB)
 			if err2 != nil {
@@ -43,8 +43,7 @@ func HandleLoadDataInfile(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter
 		}
 
 		// INSERT INTO TMP_<TABLE_NAME>
-		err = insertIntoTable(binsert.Path, tmp_table_name, ctx.DB)
-		if err != nil {
+		if err = insertIntoTable(binsert.Path, tmp_table_name, ctx.DB); err != nil {
 			l.Errorln("insert into tmp table failed, error is ", err.Error())
 			err2 := dropTmpTable(tmp_table_name, ctx.DB)
 			if err2 != nil {
@@ -56,27 +55,22 @@ func HandleLoadDataInfile(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter
 		// split the file according to partition infos
 		for idx, p := range partition_meta.HFragInfos {
 			tmp_filepath := "/tmp/data/" + "TMP_" + p.FragName + ".csv"
-			err = selectIntoFile(tmp_filepath, partition_meta, tmp_table_name, p, ctx.DB)
-			if err != nil {
+			if err = selectIntoFile(tmp_filepath, partition_meta, tmp_table_name, p, ctx.DB); err != nil {
 				l.Errorln("select into file failed, error is ", err.Error())
-				err2 := dropTmpTable(tmp_table_name, ctx.DB)
-				if err2 != nil {
+				if err2 := dropTmpTable(tmp_table_name, ctx.DB); err2 != nil {
 					l.Errorln("Drop tmp table failed.")
 				}
 				return ret, err
 			}
 
-			err := utils.Chown(u.Username, tmp_filepath, false)
-			if err != nil {
+			if err := utils.Chown(u.Username, tmp_filepath, false); err != nil {
 				l.Errorln("chown failed, error is ", err)
 				return ret, err
 			}
 
-			err = sendToDestMachine(u.Username, tmp_filepath, ctx.IP, partition_meta.SiteInfos[idx])
-			if err != nil {
+			if err = sendToDestMachine(u.Username, tmp_filepath, ctx.IP, partition_meta.SiteInfos[idx]); err != nil {
 				l.Errorln("send file, error is ", err)
-				err2 := dropTmpTable(tmp_table_name, ctx.DB)
-				if err2 != nil {
+				if err2 := dropTmpTable(tmp_table_name, ctx.DB); err2 != nil {
 					l.Errorln("Drop tmp table failed.")
 				}
 				return ret, err
@@ -90,8 +84,7 @@ func HandleLoadDataInfile(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter
 			ret = append(ret, router)
 		}
 
-		err = dropTmpTable(tmp_table_name, ctx.DB)
-		if err != nil {
+		if err = dropTmpTable(tmp_table_name, ctx.DB); err != nil {
 			l.Errorln("Drop tmp table failed.")
 		}
 
@@ -102,17 +95,15 @@ func HandleLoadDataInfile(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter
 	return ret, nil
 }
 
-func createTmpTable(table_meta meta.TableMeta, db *sql.DB) (string, error) {
-	tmp_table_name := "TMP_" + table_meta.TableName
-
-	create_sql := "CREATE TABLE " + tmp_table_name
+func createTmpTable(table_name string, table_meta meta.TableMeta, db *sql.DB) error {
+	create_sql := "CREATE TABLE " + table_name
 
 	table_fields := "("
 
 	for idx, col := range table_meta.Columns {
 		type_str, err := meta.FieldType2String(col.Type)
 		if err != nil {
-			return "", err
+			return err
 		}
 		if idx == len(table_meta.Columns)-1 {
 
@@ -126,7 +117,7 @@ func createTmpTable(table_meta meta.TableMeta, db *sql.DB) (string, error) {
 
 	create_sql += table_fields
 	_, err := db.Exec(create_sql)
-	return tmp_table_name, err
+	return err
 }
 
 func dropTmpTable(table_name string, db *sql.DB) error {

@@ -130,6 +130,7 @@ type Peer struct {
 }
 
 type Context struct {
+	Messages        *chan Message
 	TableMetas      TableMetas
 	TablePartitions Partitions
 	Peers           []Peer

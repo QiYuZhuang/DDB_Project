@@ -1,5 +1,7 @@
 package meta
 
+import "sync"
+
 type TransactionType uint32
 
 const (
@@ -14,20 +16,40 @@ type Transaction struct {
 	TxnId           uint64
 	Type            TransactionType
 	Sql             string
+	SubQueryNumber  int
 	Participants    []string
 	TmpResultInFile []string // file path from remote
 	EffectRows      []int
-	QueryResult     []QueryResults
-	SubSqlIsRemote  []bool
 	Responses       []bool
 	Error           error
+
+	b_mutex sync.Mutex
 }
 
 func (t *Transaction) Init(len int) {
 	t.Participants = make([]string, len)
 	t.TmpResultInFile = make([]string, len)
-	t.QueryResult = make([]QueryResults, len)
 	t.Responses = make([]bool, len)
-	t.SubSqlIsRemote = make([]bool, len)
+	// t.SubSqlIsRemote = make([]bool, len)
 	t.EffectRows = make([]int, len)
 }
+
+func (t *Transaction) AssignSubQueryId() int {
+	t.b_mutex.Lock()
+	defer t.b_mutex.Unlock()
+
+	t.SubQueryNumber++
+	return t.SubQueryNumber
+}
+
+type StmtType int32
+
+const (
+	SelectStmtType StmtType = iota
+	InsertStmtType
+	CreateTableStmtType
+	DropTableStmtType
+	LoadDataStmtType
+	SelectIntoFileStmtType
+	StmtTypeNum
+)

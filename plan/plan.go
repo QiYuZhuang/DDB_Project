@@ -22,11 +22,11 @@ type NodeType int32
 
 const (
 	//1 for table, 2 for select, 3 for projuection, 4 for join, 5 for union
-	DataSourceType NodeType = 1
-	SelectType     NodeType = 2
-	ProjectionType NodeType = 3
-	JoinType       NodeType = 4
-	UnionType      NodeType = 5
+	DataSourceType NodeType = iota
+	SelectType
+	ProjectionType
+	JoinType
+	UnionType
 )
 
 func (s NodeType) String() string {
@@ -55,7 +55,7 @@ func (s NodeType) String() string {
 // }
 
 type PlanTreeNode struct {
-	// NodeId int
+	NodeId int
 	// self     BasePlan
 	children []*PlanTreeNode
 	Type     NodeType
@@ -335,7 +335,6 @@ func OptimizeTransmission(ctx meta.Context, p *PlanTreeNode) {
 		//二叉树新的一行的节点放入队列中
 		queue = temp
 	}
-	return
 }
 
 func PrintPlanTreePlot(p *PlanTreeNode) string {
@@ -472,23 +471,6 @@ func GetCondition(expr *ast.BinaryOperationExpr) (ColType, ColType,
 	return left, right, left_attr, right_attr, left_val, right_val, nil
 }
 
-// func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
-// 	left, right, left_attr, right_attr, _, right_val, _ := GetCondition(expr)
-// 	var left_str string
-// 	var right_str string
-
-// 	if left == AttrType && right == ValueType {
-// 		left_str = left_attr.Name.String()
-// 		right_str = right_val.GetDatumString() + strconv.Itoa(int(right_val.GetInt64()))
-// 	} else if left == AttrType && right == AttrType {
-// 		left_str = left_attr.Name.String()
-// 		right_str = right_attr.Name.String()
-// 	} else {
-// 		fmt.Println("not supported")
-// 	}
-// 	return left_str + " " + expr.Op.String() + " " + right_str
-// }
-
 func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
 	left, right, left_attr, right_attr, _, right_val, _ := GetCondition(expr)
 	var left_str string
@@ -514,15 +496,18 @@ func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
 	return left_str + " " + op_str_ + " " + right_str
 }
 
-func ParseAndExecute(ctx meta.Context, sql_str string) (*PlanTreeNode, []meta.SqlRouter, error) {
-	var p *PlanTreeNode
-	var ret []meta.SqlRouter
-	var err error
+func ParseAndExecute(ctx meta.Context, sql_str string) (meta.StmtType, *PlanTreeNode, []meta.SqlRouter, error) {
+	var (
+		p        *PlanTreeNode
+		ret      []meta.SqlRouter
+		sql_type meta.StmtType
+		err      error
+	)
 
 	if !ctx.IsDebugLocal {
 		err := etcd.RefreshContext(&ctx)
 		if err != nil {
-			return p, ret, err
+			return meta.StmtTypeNum, p, ret, err
 		}
 	}
 	my_parser := parser.New()
@@ -550,7 +535,7 @@ func ParseAndExecute(ctx meta.Context, sql_str string) (*PlanTreeNode, []meta.Sq
 		stmt, err1 := my_parser.ParseOneStmt(sql_str, "", "")
 		if err1 != nil {
 			fmt.Println(err1)
-			return p, ret, err1
+			return meta.StmtTypeNum, p, ret, err1
 		}
 
 		// Otherwise do something with stmt
@@ -558,20 +543,26 @@ func ParseAndExecute(ctx meta.Context, sql_str string) (*PlanTreeNode, []meta.Sq
 		case *ast.SelectStmt:
 			fmt.Println("Select")
 			p, err = HandleSelect(ctx, x)
+			sql_type = meta.SelectStmtType
 		case *ast.InsertStmt:
 			fmt.Println("Insert") // same as delete
 			ret, err = HandleInsert(ctx, x)
+			sql_type = meta.InsertStmtType
 		case *ast.CreateTableStmt:
 			fmt.Println("create table") // same as delete
 			ret, err = HandleCreateTable(ctx, x)
+			sql_type = meta.CreateTableStmtType
 		case *ast.DropTableStmt:
 			ret, err = HandleDropTable(ctx, x)
+			sql_type = meta.DropTableStmtType
 		case *ast.DeleteStmt:
 			fmt.Println("delete") // same as delete
 			ret, err = HandleDelete(ctx, x)
+			sql_type = meta.DropTableStmtType
 		case *ast.LoadDataStmt:
 			fmt.Println("load data infile")
 			ret, err = HandleLoadDataInfile(ctx, x)
+			sql_type = meta.LoadDataStmtType
 		default:
 			// createdb, dropdb, all broadcast
 			ret, err = BroadcastSQL(ctx, x)
@@ -580,5 +571,5 @@ func ParseAndExecute(ctx meta.Context, sql_str string) (*PlanTreeNode, []meta.Sq
 	if err != nil {
 		fmt.Println(err)
 	}
-	return p, ret, err
+	return sql_type, p, ret, err
 }

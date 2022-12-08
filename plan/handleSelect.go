@@ -264,7 +264,35 @@ func HandleSelect(ctx meta.Context, sel *ast.SelectStmt) (p *PlanTreeNode, err e
 		return p, err
 	}
 
+	cur_index := 0
+	SetNodeId(ctx, new_joined_tree, &cur_index)
+
 	OptimizeTransmission(ctx, new_joined_tree)
 
+	// todo test
+	if new_joined_tree != nil && new_joined_tree.GetChildrenNum() != 0 {
+		new_joined_tree = new_joined_tree.GetChild(0)
+	}
+	//
 	return new_joined_tree, err
+}
+
+func SetNodeId(ctx meta.Context, from *PlanTreeNode, cur_index *int) error {
+	var err error
+
+	from.NodeId = *cur_index
+	*cur_index += 1
+
+	if from.GetChildrenNum() == 0 {
+
+	} else {
+		for i := 0; i < from.GetChildrenNum(); i++ {
+
+			err := SetNodeId(ctx, from.GetChild(i), cur_index)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
 }
