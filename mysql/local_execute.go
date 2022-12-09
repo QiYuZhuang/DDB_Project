@@ -28,7 +28,7 @@ func CreateExecuteContext(sql_id int, sql string, filepath string, db *sql.DB, l
 	}
 }
 
-func LocalExecSql(ctx *ExecuteContext, is_select bool) {
+func LocalExecSql(ctx *ExecuteContext, query_type meta.StmtType) {
 	l := ctx.logger
 	// active_trans := c.ActiveTransactions
 	db := ctx.db
@@ -39,34 +39,104 @@ func LocalExecSql(ctx *ExecuteContext, is_select bool) {
 		return
 	}
 	l.Infoln("local exec sql: ", ctx.sql)
-	is_data_loader := ctx.filepath != ""
-	if !is_select {
-		if is_data_loader {
-			err = utils.Chown("mysql", ctx.filepath, false)
-			if err != nil {
-				l.Errorln("chown failed, error is ", err.Error())
-			}
+	if query_type == meta.LoadDataStmtType {
+		err = utils.Chown("mysql", ctx.filepath, false)
+		if err != nil {
+			l.Errorln("chown failed, error is ", err.Error())
 		}
+
 		_, err := db.Exec(ctx.sql)
 		if err != nil {
 			l.Errorln("local exec failed. err: ", err.Error())
 		}
-		if is_data_loader {
-			err = utils.RmFile(ctx.filepath, false)
-			if err != nil {
-				l.Errorln("delete failed, error is ", err.Error())
-			}
-		}
 
-		// txn.Results[sql_id] = res
-	} else {
+		err = utils.RmFile(ctx.filepath, false)
+		if err != nil {
+			l.Errorln("delete failed, error is ", err.Error())
+		}
+	} else if query_type == meta.SelectStmtType {
 		rows, err := db.Query(ctx.sql)
 		if err != nil {
 			l.Errorln("local exec failed. err: ", err.Error())
 		}
 
-		txn.QueryResult[ctx.sql_id], txn.EffectRows[ctx.sql_id] = ParseRows(rows)
+		txn.EffectRows[ctx.sql_id] = ParseRows(rows)
+	} else {
+		_, err := db.Exec(ctx.sql)
+		if err != nil {
+			l.Errorln("local exec failed. err: ", err.Error())
+		}
 	}
 	txn.Responses[ctx.sql_id] = true
 	txn.Error = err
+}
+
+func LocalExecDataLoad(ctx meta.Context, sql string, filepath string) error {
+	l := ctx.Logger
+	// active_trans := c.ActiveTransactions
+	db := ctx.DB
+
+	err := db.Ping()
+	if err != nil {
+		l.Errorln("db connect failed. err: ", err.Error())
+		return err
+	}
+	l.Infoln("local exec sql: ", sql)
+
+	err = utils.Chown("mysql", filepath, false)
+	if err != nil {
+		l.Errorln("chown failed, error is ", err.Error())
+	}
+
+	_, err = db.Exec(sql)
+	if err != nil {
+		l.Errorln("local exec failed. err: ", err.Error())
+		return err
+	}
+
+	err = utils.RmFile(filepath, false)
+	if err != nil {
+		l.Errorln("delete failed, error is ", err.Error())
+		return err
+	}
+
+	return nil
+}
+
+func LocalExecInternalSql(ctx *meta.Context, sql string, filepath string, query_type meta.StmtType) error {
+	// file path is used for batch insert
+	l := ctx.Logger
+	// active_trans := c.ActiveTransactions
+	db := ctx.DB
+
+	err := db.Ping()
+	if err != nil {
+		l.Errorln("db connect failed. err: ", err.Error())
+		return err
+	}
+	l.Infoln("local exec sql: ", sql)
+
+	if query_type == meta.LoadDataStmtType {
+		err = utils.Chown("mysql", filepath, false)
+		if err != nil {
+			l.Errorln("chown failed, error is ", err.Error())
+			return err
+		}
+	}
+
+	_, err = db.Exec(sql)
+	if err != nil {
+		l.Errorln("local exec failed. err: ", err.Error())
+		return err
+	}
+
+	if query_type == meta.LoadDataStmtType {
+		err = utils.RmFile(filepath, false)
+		if err != nil {
+			l.Errorln("delete failed, error is ", err.Error())
+			return err
+		}
+	}
+
+	return nil
 }

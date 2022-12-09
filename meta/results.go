@@ -1,5 +1,7 @@
 package meta
 
+import "time"
+
 type QueryType int
 
 const (
@@ -8,9 +10,9 @@ const (
 	InsertStmt QueryType = 3
 )
 
-type QueryResults struct {
-	Type      QueryType
-	Error     error
-	TableName string
-	Results   []Publish
+type BackToClient struct {
+	Error    error         `json:"error"`
+	Filepath string        `json:"filepath"`
+	Filename string        `json:"filename"`
+	ExecTime time.Duration `json:"exec_time"`
 }

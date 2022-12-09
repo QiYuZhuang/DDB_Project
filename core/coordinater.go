@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"container/list"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
 	"os"
+	"os/user"
 	cfg "project/config"
 	"project/meta"
 	"project/mysql"
@@ -34,6 +36,7 @@ type Coordinator struct {
 	Partitions          meta.Partitions
 	GlobalTransactionId uint64
 	ActiveTransactions  map[uint64]*meta.Transaction
+	Messages            chan meta.Message
 
 	d_mutex sync.Mutex
 	t_mutex sync.Mutex // for global_transaction_id
@@ -115,6 +118,8 @@ func NewCoordinator(ctx *cfg.Context) *Coordinator {
 	fmt.Println(c.TableMetas)
 
 	c.ActiveTransactions = make(map[uint64]*meta.Transaction)
+
+	c.Messages = make(chan meta.Message, 100)
 	return &c
 }
 
@@ -145,50 +150,71 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 			l.Debugln("when read conn, conn closed", err.Error())
 			break
 		}
-		l.Debugln("sql:", n)
-		// panic("handle sql, not implement now")
-		// parser_tree := parser(buf)
-
-		// 创建新事务
-		txn := NewTransaction(string(buf), c)
-		ctx := meta.Context{
-			TableMetas:      c.TableMetas,
-			TablePartitions: c.Partitions,
-			Peers:           c.Peers[:],
-			IP:              c.Context.DB_host,
-			DB:              c.Context.DB,
-			Logger:          c.Context.Logger,
-			IsDebugLocal:    true,
+		sql := string(buf[:n])
+		resp := c.process(sql)
+		// 返回一个结构体，里面包含了最终的临时文件，以及执行状态
+		// client 去处理结构体里的信息
+		if data, err := json.Marshal(resp); err == nil {
+			conn.Write(data)
 		}
-		plan_tree, sqls, err := plan.ParseAndExecute(ctx, string(buf[:n]))
+	}
+}
+
+func (c *Coordinator) process(sql string) meta.BackToClient {
+	var resp meta.BackToClient
+	l := c.Context.Logger
+	// 创建新事务
+	txn := NewTransaction(sql, c)
+	ctx := meta.Context{
+		Messages:        &c.Messages,
+		TableMetas:      c.TableMetas,
+		TablePartitions: c.Partitions,
+		Peers:           c.Peers[:],
+		IP:              c.Context.DB_host,
+		DB:              c.Context.DB,
+		Logger:          c.Context.Logger,
+		IsDebugLocal:    true,
+	}
+	sql_type, plan_tree, sqls, err := plan.ParseAndExecute(ctx, sql)
+	if err != nil {
+		l.Errorln(err.Error())
+		resp.Error = err
+		return resp
+	}
+
+	// var eachNodeColNames [][]string
+	var filename string
+
+	// plan-tree
+	if sql_type == meta.SelectStmtType && plan_tree != nil {
+		fmt.Println(plan_tree)
+		txn.Init(100)
+		filename, err = mysql.Exec(&ctx, txn, plan_tree)
 		if err != nil {
-			l.Errorln(err.Error())
-			conn.Write([]byte(err.Error()))
-			continue
-			// delete(c.ActiveTransactions, txn.TxnId)
+			resp.Error = err
 		}
-
-		var eachNodeColNames [][]string
-		var tableName string
-		// plan-tree
-		if plan_tree != nil {
-			fmt.Println(plan_tree)
-			sqls, eachNodeColNames, tableName = generateSqlRouter(plan_tree)
-		}
-		// var sqls []SqlRouter
+	} else {
 		txn.Init(len(sqls))
 
 		for i, s := range sqls {
-			m := c.NewQueryRequestMessage(uint16(i), s, txn)
-			id := FlushMessage(c, m)
+			var m *meta.Message
+			if len(s.File_path) != 0 {
+				m = meta.NewDataLoadRequestMessage(ctx.IP, s.Site_ip, txn.TxnId)
+				m.SetFilepath(s.File_path)
+			} else {
+				m = meta.NewQueryRequestMessage(ctx.IP, s.Site_ip, txn.TxnId)
+			}
+			m.SetQueryId(i)
+			m.SetQuery(s.Sql)
+			id := FindDestMachineId(c.Peers[:], *m)
 			if id == -1 {
 				l.Error("can not send to ip:", s.Site_ip)
+				resp.Error = errors.New("invaild remote ip")
+				break
 			} else if id == int(c.Id) {
-				txn.SubSqlIsRemote[i] = false
 				exec_ctx := mysql.CreateExecuteContext(i, s.Sql, s.File_path, c.Context.DB, c.Context.Logger, txn)
-				go mysql.LocalExecSql(exec_ctx, utils.ContainString(s.Sql, "SELECT", true))
+				go mysql.LocalExecSql(exec_ctx, sql_type)
 			} else {
-				txn.SubSqlIsRemote[i] = true
 				l.Infoln(m.Query, m.Src, m.Dst)
 				c.DispatchMessages[id].PushBack(*m)
 			}
@@ -199,54 +225,29 @@ func (c *Coordinator) LocalConnectionHandler(conn net.Conn) {
 		}
 
 		// wait
-		// result = plan_tree_root->execute(c, )
-		// ---- insert -> ip / sql
-		// ---- select -> execute_tree
 		for i := 0; i < len(sqls); i++ {
-			l.Infoln("wait for response for subquery id(%v), expect response from %s", sqls[i].Sql, sqls[i].Site_ip)
+			l.Infoln("wait for response for subquery id(", sqls[i].Sql, "), expect response from", sqls[i].Site_ip)
 			for !txn.Responses[i] {
-				time.Sleep(time.Duration(1) * time.Nanosecond)
+				time.Sleep(time.Duration(10) * time.Nanosecond)
 			}
 		}
-		response := "ok"
 
-		if len(tableName) > 0 {
-			partition_meta, err := plan.GetPartitionMeta(ctx, tableName)
-			if err != nil {
-				l.Error("xxx")
-			}
-
-			var Output []meta.Publish
-			response = ""
-			if partition_meta.PartitionType == meta.Horizontal { //水平划分
-				for i := 0; i < len(txn.QueryResult); i++ {
-					var curRow = txn.QueryResult[i]
-					Output = append(Output, curRow.Results...)
-				}
-				for i := 0; i < len(eachNodeColNames[0]); i++ {
-					response += eachNodeColNames[0][i] + "|"
-				}
-				response += "\n"
-
-			} else { //垂直划分
-
-				for i := 0; i < len(txn.QueryResult); i++ {
-					// var curRow = txn.QueryResult[i]
-					// if curRow.Next() {
-
-					// }
-				}
-
-			}
-
-			// response
-			for i := 0; i < len(Output); i++ {
-				response += Output[i].ToString()
+		for i := 0; i < len(sqls); i++ {
+			if txn.Error != nil {
+				resp.Error = txn.Error
+				// assign resp.ExecTime
 			}
 		}
-		conn.Write([]byte(response))
-		delete(c.ActiveTransactions, txn.TxnId)
 	}
+
+	if sql_type == meta.SelectStmtType && plan_tree != nil {
+		// select: set file path
+		resp.Filename = filename
+	}
+
+	delete(c.ActiveTransactions, txn.TxnId)
+
+	return resp
 }
 
 func (c *Coordinator) wait_for_local_connection() {
@@ -269,64 +270,19 @@ func (c *Coordinator) wait_for_local_connection() {
 	}
 }
 
+func (c *Coordinator) RemoveUselessFiles() {
+	filepath1 := "/tmp/data/"
+	utils.RmFile(filepath1+"*TMP_*", false)
+
+	u, _ := user.Current()
+	filepath2 := "/home/" + u.Username + "/"
+	utils.RmFile(filepath2+"*TMP_*", false)
+}
+
 func (c *Coordinator) Start() {
+	c.RemoveUselessFiles()
+
 	c.connect_to_peers()
 	// create a goroutine, which listen to local connection
 	c.wait_for_local_connection()
 }
-
-func generateSqlRouter(node *plan.PlanTreeNode) ([]meta.SqlRouter, [][]string, string) {
-	var resArray []meta.SqlRouter
-	var eachNodeColNames [][]string
-	var tableName string
-	dfsPlanNode(node, &resArray, &eachNodeColNames, &tableName)
-	return resArray, eachNodeColNames, tableName
-}
-
-func dfsPlanNode(node *plan.PlanTreeNode, resArray *[]meta.SqlRouter, eachNodeColNames *[][]string, tableName *string) {
-	if node == nil {
-		return
-	}
-
-	if node.GetChildrenNum() == 0 {
-		var res meta.SqlRouter
-		res.Site_ip = node.ExecuteSiteIP
-		var sqlStr string = "SELECT @ FROM @;"
-		var columns string = ""
-		var curNodeCols []string
-		for i := 0; i < len(node.ColsName); i++ {
-			if len(columns) > 0 {
-				columns += ","
-			}
-			columns = columns + node.ColsName[i]
-			curNodeCols = append(curNodeCols, node.ColsName[i])
-		}
-		columns = " " + columns
-
-		sqlStr = strings.Replace(sqlStr, "@", columns, 1)
-
-		sqlStr = strings.Replace(sqlStr, "@", node.FromTableName, 1)
-
-		res.Sql = sqlStr
-		*eachNodeColNames = append(*eachNodeColNames, curNodeCols)
-		*resArray = append(*resArray, res)
-		*tableName = node.FromTableName
-	} else {
-		for i := 0; i < node.GetChildrenNum(); i++ {
-			dfsPlanNode(node.GetChild(i), resArray, eachNodeColNames, tableName)
-		}
-	}
-
-}
-
-// func (c *Coordinator) BroadcastToPeers(sql string, peers []string) {
-// 	for _, p := range peers {
-// 		for _, pp := range c.peers {
-// 			if pp.ip == p {
-// 				message := c.NewQueryRequestMessage(new plan.SqlRouter{
-
-// 				})
-// 			}
-// 		}
-// 	}
-// }
