@@ -268,7 +268,7 @@ func TestParseDebugLocal(t *testing.T) {
 	// stmt, _ := my_parser.ParseOneStmt("select test.a, test2.b from test, test2 where test.a >= 2 and test2.b < 30;", "", "")
 
 	sql_strs := []string{
-		"create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
+		// "create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
 		// "create table customer (ID int, NAME varchar(255), RANK_ int);",
 		// "insert into publisher values(103999, 'zzq', 'PRC');",
 		// "insert into publisher values(103999, 'zzq2', 'USA');",
@@ -277,14 +277,14 @@ func TestParseDebugLocal(t *testing.T) {
 		// "insert into customer values(20000, 'hello world', 2);",
 		// "insert into customer values(20000, 'hello world', 2);",
 		// "drop table customer;",
-		`create partition on |PUBLISHER| [horizontal] \
-			at (10.77.110.145, 10.77.110.146, 10.77.110.145, 10.77.110.146) \
-			where { \
-			 "PUBLISHER_1" : ID < 104000 and NATION = 'PRC'; \
-			 "PUBLISHER_2" : ID < 104000 and NATION = 'USA'; \
-			 "PUBLISHER_3" : ID >= 104000 and NATION = 'PRC'; \
-			 "PUBLISHER_4" : ID >= 104000 and NATION = 'USA' \
-			};`,
+		// `create partition on |PUBLISHER| [horizontal] \
+		// 	at (10.77.110.145, 10.77.110.146, 10.77.110.145, 10.77.110.146) \
+		// 	where { \
+		// 	 "PUBLISHER_1" : ID < 104000 and NATION = 'PRC'; \
+		// 	 "PUBLISHER_2" : ID < 104000 and NATION = 'USA'; \
+		// 	 "PUBLISHER_3" : ID >= 104000 and NATION = 'PRC'; \
+		// 	 "PUBLISHER_4" : ID >= 104000 and NATION = 'USA' \
+		// 	};`,
 		// "create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
 		// `create partition on |CUSTOMER| [vertical]
 		// 	at (10.77.110.145, 10.77.110.146)
@@ -293,7 +293,7 @@ func TestParseDebugLocal(t *testing.T) {
 		// 	"CUSTOMER.2" : ID, rank
 		// 	};`,
 		// "select * from Customer;",
-		"select * from Publisher;",
+		// "select * from Publisher;",
 		// "select Publisher.name from Publisher;",
 		// `select Customer.name,Orders.quantity
 		// from Customer,Orders
@@ -317,17 +317,14 @@ func TestParseDebugLocal(t *testing.T) {
 		// `,
 
 		// 1
-		//`select *
-		//from Customer`,
+		// `select *
+		// from Customer`,
 
 		// 2
-		// `select Publisher.name
-		// from Publisher`,
+		// `select Publisher.name from Publisher`,
 
 		// 3
-		// `select Book.title
-		// from Book
-		// where copies>5000`,
+		`select Book.title from Book where copies>5000`,
 		// `select customer_id, quantity from Orders
 		// where quantity < 8`,
 		// `select Book.title,Book.copies,  Publisher.name,Publisher.nation

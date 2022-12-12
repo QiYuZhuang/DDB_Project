@@ -264,6 +264,9 @@ func HandleSelect(ctx meta.Context, sel *ast.SelectStmt) (p *PlanTreeNode, err e
 		return p, err
 	}
 
+	cur_index := 0
+	SetNodeId(ctx, new_joined_tree, &cur_index)
+
 	OptimizeTransmission(ctx, new_joined_tree)
 
 	return new_joined_tree, err

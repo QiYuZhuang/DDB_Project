@@ -1075,6 +1075,7 @@ func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_in
 				ExecuteSiteIP: from.ExecuteSiteIP,
 				DestSiteIP:    from.DestSiteIP,
 			}.Init()
+
 		}
 		if len(from.ColsName) > 0 {
 			from.ColsName = filterColumns(partition_info, from)
@@ -1104,7 +1105,28 @@ func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_in
 		}
 	} else {
 		for i := 0; i < from.GetChildrenNum(); i++ {
+
 			err := AddProjectionAndSelectionNode(ctx, from.GetChild(i), i, from)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
+}
+
+func SetNodeId(ctx meta.Context, from *PlanTreeNode, cur_index *int) error {
+	var err error
+
+	from.NodeId = *cur_index
+	*cur_index += 1
+
+	if from.GetChildrenNum() == 0 {
+
+	} else {
+		for i := 0; i < from.GetChildrenNum(); i++ {
+
+			err := SetNodeId(ctx, from.GetChild(i), cur_index)
 			if err != nil {
 				return err
 			}

@@ -54,7 +54,7 @@ func (s NodeType) String() string {
 // }
 
 type PlanTreeNode struct {
-	// NodeId int
+	NodeId int
 	// self     BasePlan
 	children []*PlanTreeNode
 	Type     NodeType
