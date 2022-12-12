@@ -21,9 +21,15 @@ const (
 	NoStrategy
 )
 
+// type I interface {
+// 	GetPartAttributes() string
+// 	GetPartPredicates() string
+// }
+
 type Partitions struct {
 	Partitions []Partition `json:"patitions"`
 }
+
 type Partition struct {
 	TableName  string            `json:"table_name"`
 	SiteInfos  []SiteInfo        `json:"site_info"`
@@ -44,6 +50,14 @@ type HFragInfo struct {
 	Conditions []ConditionRange `json:"range"`
 }
 
+// func (h HFragInfo) GetPartAttributes() string {
+
+// }
+
+// func (h HFragInfo) GetPartPredicates() string {
+
+// }
+
 type ConditionRange struct {
 	ColName          string `json:"col_name"`
 	GreaterEqualThan string `json:"get"`
@@ -55,6 +69,14 @@ type VFragInfo struct {
 	FragName   string   `json:"frag_name"`
 	ColumnName []string `json:"col_names"`
 }
+
+// func (h VFragInfo) GetPartAttributes() string {
+
+// }
+
+// func (h VFragInfo) GetPartPredicates() string {
+
+// }
 
 /************************************************************/
 

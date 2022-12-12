@@ -71,8 +71,8 @@ func main() {
 }
 
 func displayResult(resp meta.BackToClient) {
-	if resp.Error != nil {
-		fmt.Println(resp.Error.Error())
+	if len(resp.Error) != 0 {
+		fmt.Println(resp.Error)
 	}
 
 	var (

@@ -21,7 +21,7 @@
                     "ip": "10.77.110.146"
                 }
             ], 
-            "fragmentation_type": "horizontal", 
+            "fragmentation_type": 0, 
             "horizontal_fragmentation": [
                 {
                     "frag_name": "PUBLISHER_1",
@@ -108,7 +108,7 @@
                     "ip": "10.77.110.146"
                 }
             ], 
-            "fragmentation_type": "vertical", 
+            "fragmentation_type": 1, 
             "horizontal_fragmentation": [],
             "vertical_fragmentation":[
                 {
@@ -142,7 +142,7 @@
                     "ip": "10.77.110.146"
                 }
             ], 
-            "fragmentation_type": "horizontal", 
+            "fragmentation_type": 0, 
             "horizontal_fragmentation": [
                 {
                     "frag_name": "ORDERS_1",
@@ -232,7 +232,7 @@
                     "ip": "10.77.110.145"
                 }
             ], 
-            "fragmentation_type": "horizontal", 
+            "fragmentation_type": 0, 
             "horizontal_fragmentation": [
                 {
                     "frag_name": "BOOK_1",

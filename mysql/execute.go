@@ -42,6 +42,7 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 	}
 
 	query_id := node.NodeId
+	table_name := node.FromTableName
 	u, _ := user.Current()
 
 	if node.GetChildrenNum() == 0 {
@@ -66,8 +67,8 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 			}
 		}
 
-		if len(node.FromTableName) != 0 {
-			references = " FROM " + node.FromTableName
+		if len(table_name) != 0 {
+			references = " FROM " + table_name
 		}
 
 		for i := 0; i < len(node.ConditionsStr); i++ {
@@ -78,7 +79,7 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 			}
 		}
 
-		select_sql = select_sql + attributes + references + predicates + ";"
+		select_sql = select_sql + attributes + references + predicates
 
 		// tmp path is `/home/<username>`, filename is `TMP_<IP>_<table_name>.csv`
 		if is_remote {
@@ -86,6 +87,7 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 			m := meta.NewQueryRequestMessage(ctx.IP, node.ExecuteSiteIP, txn.TxnId)
 			m.SetQueryId(query_id)
 			m.SetQuery(select_sql)
+			m.SetTableName(table_name)
 
 			// flush messages
 			*ctx.Messages <- *m
@@ -100,7 +102,7 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 
 			internal_results <- tmp_filename
 		} else {
-			tmp_filename := "INTER_TMP_" + strconv.Itoa(int(txn.TxnId)) + "_" + strconv.Itoa(query_id) + ".csv"
+			tmp_filename := "INTER_TMP_%" + table_name + "%_" + strconv.Itoa(int(txn.TxnId)) + "_" + strconv.Itoa(query_id) + ".csv"
 			raw_path := "/tmp/data/" + tmp_filename
 			tmp_path := "/home/" + u.Username + "/" + tmp_filename
 			select_sql := utils.GenerateSelectIntoFileSql(strings.Trim(select_sql, ";"), raw_path, "|", "")
@@ -172,6 +174,10 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 }
 
 func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeNode, file_list []string) (string, error) {
+	l := ctx.Logger
+	table_name := node.FromTableName
+	u, _ := user.Current()
+
 	partition_meta, err := plan.GetPartitionMeta(*ctx, node.FromTableName)
 	if err != nil {
 		return "", errors.New("cannot find partition meta")
@@ -185,7 +191,41 @@ func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.Pl
 	var filepath string
 
 	for i := 0; i < len(file_list); i++ {
+		tmp_table_name := "INTER_TMP_" + table_name + "_" + strconv.Itoa(int(txn.TxnId)) + "_" + strconv.Itoa(node.NodeId)
+
+		filename := file_list[i]
+		if len(filename) == 0 {
+			l.Error("execute sub query id: ", i)
+			dropTmpTable(tmp_table_name, ctx.DB)
+			return "", errors.New("execute sub query failed")
+		}
+
+		filepath := "/home/" + u.Username + "/" + filename
+		dst_path := "/tmp/data/" + filename
+		if err = utils.MvFile(filepath, dst_path, false); err != nil {
+			dropTmpTable(tmp_table_name, ctx.DB)
+			return "", err
+		}
+
+		if err = utils.Chown("mysql", dst_path, false); err != nil {
+			dropTmpTable(tmp_table_name, ctx.DB)
+			return "", err
+		}
+
+		// insert into tmp table
+		if err = insertIntoTable(dst_path, tmp_table_name, ctx.DB); err != nil {
+			l.Errorln("insert into tmp table ", tmp_table_name, ", error is ", err.Error())
+			dropTmpTable(tmp_table_name, ctx.DB)
+			return "", err
+		}
+
+		if err = utils.RmFile(dst_path, false); err != nil {
+			dropTmpTable(tmp_table_name, ctx.DB)
+			l.Errorln("remove tmp file")
+		}
+
 	}
+
 	return filepath, nil
 }
 
@@ -214,16 +254,19 @@ func handleUnionOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.P
 		filename := file_list[i]
 		if len(filename) == 0 {
 			l.Error("execute sub query id: ", i)
+			dropTmpTable(tmp_table_name, ctx.DB)
 			return "", errors.New("execute sub query failed")
 		}
 
 		filepath := "/home/" + u.Username + "/" + filename
 		dst_path := "/tmp/data/" + filename
 		if err = utils.MvFile(filepath, dst_path, false); err != nil {
+			dropTmpTable(tmp_table_name, ctx.DB)
 			return "", err
 		}
 
 		if err = utils.Chown("mysql", dst_path, false); err != nil {
+			dropTmpTable(tmp_table_name, ctx.DB)
 			return "", err
 		}
 
@@ -235,12 +278,13 @@ func handleUnionOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.P
 		}
 
 		if err = utils.RmFile(dst_path, false); err != nil {
+			dropTmpTable(tmp_table_name, ctx.DB)
 			l.Errorln("remove tmp file")
 		}
 	}
 
 	// select into tmp file
-	tmp_filename := "INTER_TMP_" + strconv.Itoa(int(txn.TxnId)) + "_" + strconv.Itoa(node.NodeId) + ".csv"
+	tmp_filename := "INTER_TMP_%" + tmp_table_name + "%_" + strconv.Itoa(int(txn.TxnId)) + "_" + strconv.Itoa(node.NodeId) + ".csv"
 	tmp_filepath_1 := "/tmp/data/" + tmp_filename
 	tmp_filepath_2 := "/home/" + u.Username + "/" + tmp_filename
 

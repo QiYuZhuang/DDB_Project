@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"container/list"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -178,7 +177,7 @@ func (c *Coordinator) process(sql string) meta.BackToClient {
 	sql_type, plan_tree, sqls, err := plan.ParseAndExecute(ctx, sql)
 	if err != nil {
 		l.Errorln(err.Error())
-		resp.Error = err
+		resp.Error = err.Error()
 		return resp
 	}
 
@@ -191,7 +190,7 @@ func (c *Coordinator) process(sql string) meta.BackToClient {
 		txn.Init(100)
 		filename, err = mysql.Exec(&ctx, txn, plan_tree)
 		if err != nil {
-			resp.Error = err
+			resp.Error = err.Error()
 		}
 	} else {
 		txn.Init(len(sqls))
@@ -209,7 +208,7 @@ func (c *Coordinator) process(sql string) meta.BackToClient {
 			id := FindDestMachineId(c.Peers[:], *m)
 			if id == -1 {
 				l.Error("can not send to ip:", s.Site_ip)
-				resp.Error = errors.New("invaild remote ip")
+				resp.Error = "invaild remote ip"
 				break
 			} else if id == int(c.Id) {
 				exec_ctx := mysql.CreateExecuteContext(i, s.Sql, s.File_path, c.Context.DB, c.Context.Logger, txn)
@@ -234,7 +233,7 @@ func (c *Coordinator) process(sql string) meta.BackToClient {
 
 		for i := 0; i < len(sqls); i++ {
 			if txn.Error != nil {
-				resp.Error = txn.Error
+				resp.Error = txn.Error.Error()
 				// assign resp.ExecTime
 			}
 		}

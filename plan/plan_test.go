@@ -269,7 +269,7 @@ func TestParseDebugLocal(t *testing.T) {
 
 	sql_strs := []string{
 		"create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
-		// "create table customer (ID int, NAME varchar(255), RANK_ int);",
+		"create table customer (ID int, NAME varchar(255), RANK_ int);",
 		// "insert into publisher values(103999, 'zzq', 'PRC');",
 		// "insert into publisher values(103999, 'zzq2', 'USA');",
 		// "insert into publisher values(104000, 'aa1', 'PRC');",
@@ -286,6 +286,7 @@ func TestParseDebugLocal(t *testing.T) {
 			 "PUBLISHER_4" : ID >= 104000 and NATION = 'USA' \
 			};`,
 		"LOAD DATA LOCAL INFILE '/tmp/data/publisher.csv' INTO TABLE publisher FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\r\n' (ID, NAME, NATION);",
+		"LOAD DATA LOCAL INFILE '/tmp/data/customer.csv' INTO TABLE customer FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\r\n' (ID, NAME, _RANK);",
 		// "create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
 		// `create partition on |CUSTOMER| [vertical]
 		// 	at (10.77.110.145, 10.77.110.146)

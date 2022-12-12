@@ -22,19 +22,20 @@ const (
  * TxnId is the identify of the query(out of order)
  */
 type Message struct {
-	Type     MessageType `json:"type"`
-	Length   uint32      `json:"length"`
-	Src      string      `json:"src_machine_id"`
-	Dst      string      `json:"dest_machine_id"`
-	TxnId    uint64      `json:"txn_id"`
-	QueryId  int         `json:"query_id"`
-	Query    string      `json:"query"`
-	Filepath string      `json:"data_file_path"`
-	Filename string      `json:"data_file_name"`
-	Result   sql.Result  `json:"result"`
-	RowCnt   int         `json:"row_cnt"`
-	Time     time.Time   `json:"time"`
-	Error    bool        `json:"error"`
+	Type      MessageType `json:"type"`
+	Length    uint32      `json:"length"`
+	Src       string      `json:"src_machine_id"`
+	Dst       string      `json:"dest_machine_id"`
+	TxnId     uint64      `json:"txn_id"`
+	QueryId   int         `json:"query_id"`
+	Query     string      `json:"query"`
+	TableName string      `json:"table_name"`
+	Filepath  string      `json:"data_file_path"`
+	Filename  string      `json:"data_file_name"`
+	Result    sql.Result  `json:"result"`
+	RowCnt    int         `json:"row_cnt"`
+	Time      time.Time   `json:"time"`
+	Error     bool        `json:"error"`
 }
 
 func NewMessage(t MessageType, src string, dst string, txn_id uint64) *Message {
@@ -79,6 +80,10 @@ func (m *Message) SetFilepath(filepath string) {
 
 func (m *Message) SetFilename(filename string) {
 	m.Filename = filename
+}
+
+func (m *Message) SetTableName(table_name string) {
+	m.TableName = table_name
 }
 
 func NewQueryRequestMessage(local_ip string, remote_ip string, txnId uint64) *Message {
