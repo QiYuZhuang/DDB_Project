@@ -15,6 +15,7 @@ import (
 	"github.com/goccy/go-graphviz/cgraph"
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/ast"
+	"github.com/pingcap/tidb/parser/opcode"
 	"github.com/pingcap/tidb/parser/test_driver"
 )
 
@@ -376,6 +377,9 @@ func PrintPlanTreePlot(p *PlanTreeNode) string {
 			}
 			for i := 0; i < nums; i++ {
 				cur_node := v.GetChild(i)
+				if cur_node.IsPruned {
+					continue
+				}
 				var cur_val string
 				if cur_node.Type == ProjectionType {
 					cur_val = "Proj.["
@@ -385,8 +389,20 @@ func PrintPlanTreePlot(p *PlanTreeNode) string {
 					cur_val += "]"
 				} else if cur_node.Type == SelectType {
 					cur_val = "Sel.["
-					for _, cond_ := range cur_node.ConditionsStr {
-						cur_val += cond_ + " "
+					for idx, cond_ := range cur_node.ConditionsStr {
+						if idx != 0 {
+							cur_val += " AND \n"
+						}
+						cur_val += cond_
+					}
+					cur_val += "]"
+				} else if cur_node.Type == JoinType {
+					cur_val = "Join.["
+					for idx, cond_ := range cur_node.ConditionsStr {
+						if idx != 0 {
+							cur_val += " AND \n"
+						}
+						cur_val += cond_
 					}
 					cur_val += "]"
 				} else {
@@ -471,29 +487,43 @@ func GetCondition(expr *ast.BinaryOperationExpr) (ColType, ColType,
 	return left, right, left_attr, right_attr, left_val, right_val, nil
 }
 
-func TransExprNode2Str(expr *ast.BinaryOperationExpr) string {
+func TransExprNode2Str(expr *ast.BinaryOperationExpr, with_table_name bool) string {
 	left, right, left_attr, right_attr, _, right_val, _ := GetCondition(expr)
 	var left_str string
 	var right_str string
 
 	if left == AttrType && right == ValueType {
 		left_str = left_attr.Name.Name.O
-		right_str = "\"" + right_val.GetDatumString() + "\""
+		if len(right_val.GetDatumString()) > 0 {
+			right_str = "\"" + right_val.GetDatumString() + "\""
+		} else {
+			right_str = "\"" + strconv.Itoa(int(right_val.GetInt64())) + "\""
+		}
+
 	} else if left == AttrType && right == AttrType {
-		left_str = left_attr.Name.Name.O
-		right_str = right_attr.Name.Name.O
+		if with_table_name {
+			left_str = left_attr.Name.Table.O + "."
+			right_str = right_attr.Name.Table.O + "."
+		}
+		left_str += left_attr.Name.Name.O
+		right_str += right_attr.Name.Name.O
 	} else {
 		fmt.Println("not supported")
 	}
 	var op_str_ string
-	if expr.Op.String() == "eq" {
+	switch expr.Op {
+	case opcode.EQ:
 		op_str_ = "="
-	} else if expr.Op.String() == "lt" {
-		op_str_ = "<"
-	} else if expr.Op.String() == "ge" {
+	case opcode.GE:
 		op_str_ = ">="
+	case opcode.LE:
+		op_str_ = "<="
+	case opcode.GT:
+		op_str_ = ">"
+	case opcode.LT:
+		op_str_ = "<"
 	}
-	return left_str + " " + op_str_ + " " + right_str
+	return strings.ToUpper(left_str + " " + op_str_ + " " + right_str)
 }
 
 func ParseAndExecute(ctx meta.Context, sql_str string) (meta.StmtType, *PlanTreeNode, []meta.SqlRouter, error) {

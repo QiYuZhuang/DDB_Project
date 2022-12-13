@@ -15,9 +15,10 @@ import (
 	"github.com/pingcap/tidb/parser/test_driver"
 )
 
-func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.ExprNode, []string) {
+func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.ExprNode, []string, []string) {
 	// put frag condition into table-node
 	var conds_ []ast.ExprNode
+	var conds_str []string
 	var cols_ []string
 
 	if frag_info.FragType == meta.Horizontal {
@@ -47,6 +48,7 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 							new_expr_node_.R = &val_attr_node
 
 							conds_ = append(conds_, &new_expr_node_)
+							conds_str = append(conds_str, TransExprNode2Str(&new_expr_node_, false))
 						}
 						if cond_.GreaterEqualThan != "" {
 							new_expr_node_ := new_expr_node
@@ -60,6 +62,7 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 							new_expr_node_.R = &val_attr_node
 
 							conds_ = append(conds_, &new_expr_node_)
+							conds_str = append(conds_str, TransExprNode2Str(&new_expr_node_, false))
 						}
 					} else {
 						// ==
@@ -75,6 +78,7 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 						new_expr_node_.R = &val_attr_node
 
 						conds_ = append(conds_, &new_expr_node_)
+						conds_str = append(conds_str, TransExprNode2Str(&new_expr_node_, false))
 					}
 				}
 			}
@@ -86,14 +90,14 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 			}
 		}
 	}
-	return conds_, cols_
+	return conds_, conds_str, cols_
 }
 
 func GetFilterCondition(frags_ meta.Partition, frag_name string) ([]string, []string, error) {
 	// filter condition
 	var condition_str_ []string
 
-	conds_, col_str_ := InitFragWithCondition(frags_, frag_name)
+	conds_, _, col_str_ := InitFragWithCondition(frags_, frag_name)
 
 	if frags_.FragType == meta.Horizontal {
 		for _, cond_ := range conds_ {
@@ -101,7 +105,7 @@ func GetFilterCondition(frags_ meta.Partition, frag_name string) ([]string, []st
 			if !ok {
 				return condition_str_, col_str_, errors.New("fail to type cast into BinaryOperationExpr")
 			}
-			condition_str_ = append(condition_str_, TransExprNode2Str(expr))
+			condition_str_ = append(condition_str_, TransExprNode2Str(expr, false))
 		}
 	}
 	sort.Strings(condition_str_)
@@ -139,19 +143,25 @@ func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
 				DestSiteIP:    ctx.IP,
 			}.Init()
 			//
-			conds_, _ := InitFragWithCondition(frags_, site_info.FragName)
+			conds_, conds_str_, _ := InitFragWithCondition(frags_, site_info.FragName)
 			node.Conditions = append(node.Conditions, conds_...)
+			node.ConditionsStr = append(node.ConditionsStr, conds_str_...)
 			p.AddChild(node)
 
 		} else {
 			p.Type = JoinType
+			if len(p.ConditionsStr) == 0 {
+				p.ConditionsStr = append(p.ConditionsStr, "CUSTOMER.ID=CUSTOMER.ID")
+			}
+
 			node := PlanTreeNode{
 				Type:          DataSourceType,
 				FromTableName: site_info.FragName,
 				ExecuteSiteIP: site_info.IP,
 				DestSiteIP:    ctx.IP,
+				// ConditionsStr: conditions_str_,
 			}.Init()
-			_, cols_ := InitFragWithCondition(frags_, site_info.FragName)
+			_, _, cols_ := InitFragWithCondition(frags_, site_info.FragName)
 			// node.ColsName = append(node.ColsName, cols_...)
 			fmt.Println(cols_)
 			p.AddChild(node)
@@ -192,7 +202,7 @@ func PushDownPredicates(ctx meta.Context, frag_node *PlanTreeNode, where *PlanTr
 			cur_table_name := strings.ToUpper(left_attr.Name.Table.String())
 			if utils.ContainString(frag_node.FromTableName, cur_table_name, true) {
 				frag_node.Conditions = append(frag_node.Conditions, expr)
-				frag_node.ConditionsStr = append(frag_node.ConditionsStr, TransExprNode2Str(expr))
+				frag_node.ConditionsStr = append(frag_node.ConditionsStr, TransExprNode2Str(expr, false))
 				fmt.Println("Condition [" + strconv.FormatInt(int64(index_), 10) + "] adds to " + frag_node.FromTableName)
 			}
 
@@ -215,23 +225,30 @@ func PushDownProjections(ctx meta.Context, frag_node *PlanTreeNode, where *PlanT
 			if !ok {
 				return errors.New("fail to type cast into BinaryOperationExpr")
 			}
-			left, right, left_attr, _, _, _, err := GetCondition(expr)
+			left, right, left_attr, right_attr, _, _, err := GetCondition(expr)
 			if err != nil {
 				return err
 			}
-			if left == AttrType && right == AttrType {
-				continue
-			} else if left == AttrType && right == ValueType {
+			if left == AttrType {
 				cur_table_name := strings.ToUpper(left_attr.Name.Table.String())
 				if utils.ContainString(frag_node.FromTableName, cur_table_name, true) {
-					if !frag_projection.Contains(left_attr.Name.Name.String()) {
-						frag_projection.Add(left_attr.Name.Name.String())
-						fmt.Println("ColName from Condition [" + strconv.FormatInt(int64(index_), 10) + "] :" + left_attr.Name.Name.String() + " adds to " + frag_node.FromTableName)
+					proj_name := strings.ToUpper(left_attr.Name.Name.String())
+					if !frag_projection.Contains(proj_name) {
+						frag_projection.Add(proj_name)
+						fmt.Println("ColName from Condition [" + strconv.FormatInt(int64(index_), 10) + "] :" + proj_name + " adds to " + frag_node.FromTableName)
 					}
 				}
 
-			} else {
-				return errors.New("not support")
+			}
+			if right == AttrType {
+				cur_table_name := strings.ToUpper(right_attr.Name.Table.String())
+				if utils.ContainString(frag_node.FromTableName, cur_table_name, true) {
+					proj_name := strings.ToUpper(right_attr.Name.Name.String())
+					if !frag_projection.Contains(proj_name) {
+						frag_projection.Add(proj_name)
+						fmt.Println("ColName from Condition [" + strconv.FormatInt(int64(index_), 10) + "] :" + proj_name + " adds to " + frag_node.FromTableName)
+					}
+				}
 			}
 		}
 
@@ -296,9 +313,28 @@ func PushDownProjections(ctx meta.Context, frag_node *PlanTreeNode, where *PlanT
 	return nil
 }
 
+func getFragedTableName(fraged_names []string, cur_name string) (string, error) {
+	idx := -1
+	result_name := ""
+	upper_cur_name := strings.ToUpper(cur_name)
+
+	for i, frag_name := range fraged_names {
+		if strings.Contains(frag_name, upper_cur_name) {
+			idx = i
+			result_name = frag_name
+			break
+		}
+	}
+	if idx == -1 {
+		return result_name, errors.New("fail to getFragedTableName")
+	}
+	return result_name, nil
+}
 func GetPredicatePruning(ctx meta.Context, frag_node *PlanTreeNode) error {
 	// get single table pruned
 	condition_range := make(map[string]DataRange)
+
+	cur_table_names := strings.Split(frag_node.FromTableName, "|")
 
 	// len := len(frag_node.Conditions)
 	// for i := 0; i < len; i++ {
@@ -315,9 +351,14 @@ func GetPredicatePruning(ctx meta.Context, frag_node *PlanTreeNode) error {
 		if left == AttrType && right == AttrType {
 			continue
 		} else if left == AttrType && right == ValueType {
-			attr_num := left_attr.Name.Table.String() + "." + left_attr.Name.Name.String()
+			left_attr_frag_name, err := getFragedTableName(cur_table_names, left_attr.Name.Table.String())
+			if err != nil {
+				return err
+			}
+			left_attr_frag_col_name := strings.ToUpper(left_attr.Name.Name.String())
+			attr_num := left_attr_frag_name + "." + left_attr_frag_col_name
 			var new_range DataRange
-			type_, err := RetureType(ctx.TableMetas, left_attr.Name.Table.String(), left_attr.Name.Name.String())
+			type_, err := RetureType(ctx.TableMetas, left_attr_frag_name, left_attr_frag_col_name)
 			if err != nil {
 				return nil
 			}
@@ -488,15 +529,16 @@ func SelectionAndProjectionPushDown(ctx meta.Context, from *PlanTreeNode,
 	return nil
 }
 
-func AddJoinCondition(join_cond_expr *ast.BinaryOperationExpr, new_join *PlanTreeNode) ([]ast.ExprNode, error) {
+func AddJoinCondition(join_cond_expr *ast.BinaryOperationExpr, new_join *PlanTreeNode) ([]ast.ExprNode, []string, error) {
 	// @brief add join-where conditions which cross two tables
 	// i.e. Customer.id=Orders.customer_id
 	var ret []ast.ExprNode
+	var conds_str_ []string
 	var err error
 
 	join_left, join_right, join_left_attr, join_right_attr, _, _, err := GetCondition(join_cond_expr)
 	if join_left != AttrType || join_right != AttrType || err != nil {
-		return ret, errors.New("should all be attributes")
+		return ret, conds_str_, errors.New("should all be attributes")
 	}
 
 	switch join_cond_expr.Op {
@@ -505,14 +547,23 @@ func AddJoinCondition(join_cond_expr *ast.BinaryOperationExpr, new_join *PlanTre
 			for _, cond_ := range new_join.Conditions {
 				expr, ok := cond_.(*ast.BinaryOperationExpr)
 				if !ok {
-					return ret, errors.New("fail to type cast into BinaryOperationExpr")
+					return ret, conds_str_, errors.New("fail to type cast into BinaryOperationExpr")
 				}
 				left, right, left_attr, _, _, _, err := GetCondition(expr)
 				if err != nil {
-					return ret, err
+					return ret, conds_str_, err
 				}
 				if left == AttrType && right == ValueType {
-					if left_attr.Name.Table.String()+"."+left_attr.Name.Name.String() == join_left_attr.Name.Table.String()+"."+join_left_attr.Name.Name.String() {
+					table_name := left_attr.Name.Table.String()
+					if strings.Contains(table_name, "_") {
+						table_name = strings.Split(table_name, "_")[0]
+					}
+
+					left_attr_name_ := strings.ToUpper(table_name + "." + left_attr.Name.Name.String())
+					join_left_attr_name := strings.ToUpper(join_left_attr.Name.Table.String() + "." + join_left_attr.Name.Name.String())
+					join_right_attr_name := join_right_attr.Name.Table.String() + "." + join_right_attr.Name.Name.String()
+
+					if left_attr_name_ == join_left_attr_name {
 						// Customer.id=Orders.customer_id <-join_cond_expr
 						// Customer.id>308000 <-left_attr
 						// Orders.customer_id>308000 should be added
@@ -521,9 +572,10 @@ func AddJoinCondition(join_cond_expr *ast.BinaryOperationExpr, new_join *PlanTre
 						new_cond_.L = join_cond_expr.R
 						new_cond_.R = expr.R
 						ret = append(ret, &new_cond_)
+						conds_str_ = append(conds_str_, TransExprNode2Str(&new_cond_, false))
 					}
 
-					if left_attr.Name.Table.String()+"."+left_attr.Name.Name.String() == join_right_attr.Name.Table.String()+"."+join_right_attr.Name.Name.String() {
+					if left_attr_name_ == join_right_attr_name {
 						// Orders.customer_id=Customer.id
 						// Customer.id>308000 <-left_attr
 						// Orders.customer_id>308000 should be added
@@ -532,6 +584,7 @@ func AddJoinCondition(join_cond_expr *ast.BinaryOperationExpr, new_join *PlanTre
 						new_cond_.L = join_cond_expr.L
 						new_cond_.R = expr.R
 						ret = append(ret, &new_cond_)
+						conds_str_ = append(conds_str_, TransExprNode2Str(&new_cond_, false))
 					}
 				} else {
 					fmt.Println("do not support...")
@@ -545,9 +598,16 @@ func AddJoinCondition(join_cond_expr *ast.BinaryOperationExpr, new_join *PlanTre
 		}
 
 	}
-	return ret, err
+	return ret, conds_str_, err
 }
 
+func init_array(len int) []int {
+	var array []int
+	for i := 0; i < len; i++ {
+		array = append(array, 0)
+	}
+	return array
+}
 func PredicatePruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode) ([]string, []string, error) {
 	// PlanTreeNode,
 	var PrunedNodeName []string
@@ -588,6 +648,9 @@ func PredicatePruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode)
 			// 	FromTableName: l_table_node.FromTableName + "|" + r_table_node.FromTableName,
 			// }.Init()
 
+			l_table_node_cut_ := init_array(l_table_node.GetChildrenNum())
+			r_table_node_cut_ := init_array(r_table_node.GetChildrenNum())
+
 			// start to join one by one
 			for i := 0; i < l_table_node.GetChildrenNum(); i++ {
 				cur_l_frag := *l_table_node.GetChild(i)
@@ -606,13 +669,16 @@ func PredicatePruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode)
 
 					new_join.Conditions = append(new_join.Conditions, cur_l_frag.Conditions...)
 					new_join.Conditions = append(new_join.Conditions, cur_r_frag.Conditions...)
+					new_join.ConditionsStr = append(new_join.ConditionsStr, cur_l_frag.ConditionsStr...)
+					new_join.ConditionsStr = append(new_join.ConditionsStr, cur_r_frag.ConditionsStr...)
 
-					new_cond_join, err := AddJoinCondition(expr, new_join)
+					new_cond_join, new_cond_join_str, err := AddJoinCondition(expr, new_join)
 					if err != nil {
 						return PrunedNodeName, UnPrunedNodeName, err
 					}
 					// add all conditions
 					new_join.Conditions = append(new_join.Conditions, new_cond_join...)
+					new_join.ConditionsStr = append(new_join.ConditionsStr, new_cond_join_str...)
 					//
 					new_join.IsPruned = cur_l_frag.IsPruned || cur_r_frag.IsPruned
 					// check if it can be pruned
@@ -621,11 +687,27 @@ func PredicatePruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode)
 						return PrunedNodeName, UnPrunedNodeName, err
 					}
 					if new_join.IsPruned {
+						l_table_node_cut_[i] += 1
+						r_table_node_cut_[j] += 1
 						PrunedNodeName = append(PrunedNodeName, new_join.FromTableName)
 						// new_union.AddChild(new_join)
 					} else {
 						UnPrunedNodeName = append(UnPrunedNodeName, new_join.FromTableName)
 					}
+				}
+			}
+
+			//
+			for i := 0; i < l_table_node.GetChildrenNum(); i++ {
+				if l_table_node_cut_[i] == r_table_node.GetChildrenNum() {
+					l_table_node.GetChild(i).IsPruned = true
+					fmt.Println("frag node ", l_table_node.GetChild(i).FromTableName, " IS PRUNED")
+				}
+			}
+			for i := 0; i < r_table_node.GetChildrenNum(); i++ {
+				if r_table_node_cut_[i] == l_table_node.GetChildrenNum() {
+					r_table_node.GetChild(i).IsPruned = true
+					fmt.Println("frag node ", r_table_node.GetChild(i).FromTableName, " IS PRUNED")
 				}
 			}
 		} else {
@@ -636,43 +718,55 @@ func PredicatePruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode)
 	return PrunedNodeName, UnPrunedNodeName, err
 }
 
-func GetJoinSeq(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode, PrunedNodeName []string) ([]string, error) {
+func GetJoinSeq(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode, PrunedNodeName []string) ([]string, [][]string, error) {
 	// join sequence: A = B
+	// @reture
+	var join_seq []string         // seq
+	var join_condition [][]string // full join condtions corresponding to the join_seq
 	var err error
-	var join_seq []string
-	var join_table_set []string
+	//
+	var join_table_set []string // table already joined
 	// join_seq := mapset.NewSet()
 	// join_table_set := mapset.NewSet()
 	if where == nil {
-		return join_seq, err
+		return join_seq, join_condition, err
 	}
 	for _, cond_ := range where.Conditions {
 		// join table by the where predicates
 		expr, ok := cond_.(*ast.BinaryOperationExpr)
 		if !ok {
-			return join_seq, errors.New("fail to type cast into BinaryOperationExpr")
+			return join_seq, join_condition, errors.New("fail to type cast into BinaryOperationExpr")
 		}
 		left, right, left_attr, right_attr, _, _, err := GetCondition(expr)
 		if err != nil {
-			return join_seq, err
+			return join_seq, join_condition, err
 		}
 		// only consider join in where condition first
 		if left == AttrType && right == AttrType {
 			l_table := left_attr.Name.Table.String()
 			r_table := right_attr.Name.Table.String()
 			if l_table > r_table {
+				// keep sequence order
 				utils.SwapStr(&l_table, &r_table)
 			}
 			//
 			join_str := l_table + "=" + r_table
-			if utils.FindStr(join_seq, join_str) == -1 {
+			idx := utils.FindStr(join_seq, join_str)
+			if idx == -1 {
 				// if !join_seq.Contains(join_str) {
 				// join_seq.Add(join_str)
 				join_seq = append(join_seq, join_str)
 				join_table_set = append(join_table_set, l_table)
 				join_table_set = append(join_table_set, r_table)
+
+				var new_condition_array []string
+				new_condition_array = append(new_condition_array, TransExprNode2Str(expr, true))
+				join_condition = append(join_condition, new_condition_array)
 				// join_table_set.Add(l_table)
 				// join_table_set.Add(r_table)
+			} else {
+				// joined already
+				join_condition[idx] = append(join_condition[idx], TransExprNode2Str(expr, true))
 			}
 		}
 	}
@@ -693,9 +787,14 @@ func GetJoinSeq(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode, Prune
 
 				if utils.FindStr(join_seq, join_str) != -1 {
 					// if join_seq.Contains(join_str) {
-					return join_seq, errors.New("join_seq.Contains(join_str) should not contain" + join_str)
+					return join_seq, join_condition, errors.New("join_seq.Contains(join_str) should not contain" + join_str)
 				}
+
 				join_seq = append(join_seq, join_str)
+
+				var new_condition_array []string
+				new_condition_array = append(new_condition_array, "cartesian product")
+				join_condition = append(join_condition, new_condition_array)
 				// join_seq.Add(join_str)
 				join_table_set = append(join_table_set, child.FromTableName)
 				// join_table_set.Add(child.FromTableName)
@@ -704,7 +803,7 @@ func GetJoinSeq(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode, Prune
 		}
 	}
 
-	return join_seq, err
+	return join_seq, join_condition, err
 }
 
 func CheckPruned(PrunedNodeName []string, NodeName string) bool {
@@ -760,15 +859,15 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 
 	// join sequence: A = B
 	// where condition first
-	join_seq, err := GetJoinSeq(ctx, from, where, PrunedNodeName)
+	join_seq, join_seq_condition, err := GetJoinSeq(ctx, from, where, PrunedNodeName)
 	if err != nil {
 		return new_joined_node, err
 	}
 	// join all tables
 	// it := join_seq.Iterator()
 	// for elem := range it.C {
-	for _, elem := range join_seq {
-		join_str_ := elem // .(string)
+	for idx, elem := range join_seq {
+		join_str_ := strings.ToUpper(elem) // .(string)
 		join_strs := strings.Split(join_str_, "=")
 		l_table := strings.Trim(join_strs[0], " ")
 		r_table := strings.Trim(join_strs[1], " ")
@@ -790,11 +889,18 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 			FromTableName: l_table_node.FromTableName + "|" + r_table_node.FromTableName,
 		}.Init()
 
-		s_whole_right := mapset.NewSet()
-		var r_whole_frag_join_ *PlanTreeNode
+		// s_whole_right := mapset.NewSet()
+		// map : r_frag_join_.FromTableName ->
+		r_name_MAP_r_frag_join_ := make(map[string]*PlanTreeNode)
+		r_name_MAP_l_frag_join_ := make(map[string][]*PlanTreeNode)
+
+		// var r_whole_frag_join_ *PlanTreeNode
 		// start to join one by one
 		for i := 0; i < l_table_node.GetChildrenNum(); i++ {
 			cur_l_frag := *l_table_node.GetChild(i)
+			if cur_l_frag.IsPruned {
+				continue
+			}
 			// check if can be union
 			s_ := mapset.NewSet()
 			is_union_able := true
@@ -828,10 +934,13 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 			// iterate right frags
 			for j := 0; j < r_table_node.GetChildrenNum(); j++ {
 				cur_r_frag := *r_table_node.GetChild(j)
-
+				if cur_r_frag.IsPruned {
+					continue
+				}
 				new_join := PlanTreeNode{
 					Type:          JoinType,
 					FromTableName: cur_l_frag.FromTableName + "|" + cur_r_frag.FromTableName,
+					ConditionsStr: join_seq_condition[idx],
 				}.Init()
 
 				new_join.AddChild(&cur_l_frag)
@@ -854,48 +963,118 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 					return new_joined_node, err
 				}
 			}
-			// r_frag_join_is_not_empty
+			// r_frag_join_ is not empty
 			if is_union_able {
 				if r_frag_join_.GetChildrenNum() > 0 {
 					new_join := PlanTreeNode{
 						Type:          JoinType,
 						FromTableName: cur_l_frag.FromTableName + "|" + r_frag_join_.FromTableName,
+						ConditionsStr: join_seq_condition[idx],
 					}.Init()
 					new_join.AddChild(&cur_l_frag)
 					new_join.AddChild(r_frag_join_)
 
 					new_union.AddChild(new_join)
 					// r_frag_join_
-					s_whole_right.Add(r_frag_join_.FromTableName)
-					r_whole_frag_join_ = r_frag_join_
+
+					// s_whole_right.Add(r_frag_join_.FromTableName)
+					r_name_MAP_r_frag_join_[r_frag_join_.FromTableName] = r_frag_join_
+
+					_, ok := r_name_MAP_l_frag_join_[r_frag_join_.FromTableName]
+					if !ok {
+						var tmp []*PlanTreeNode
+						r_name_MAP_l_frag_join_[r_frag_join_.FromTableName] = tmp
+					}
+					r_name_MAP_l_frag_join_[r_frag_join_.FromTableName] = append(r_name_MAP_l_frag_join_[r_frag_join_.FromTableName], &cur_l_frag)
+					/////
+
+					// r_whole_frag_join_ = r_frag_join_
 				}
 			}
 		}
 
-		if s_whole_right.Cardinality() == 1 {
-			// whole right is the same, join together
+		//
+		if len(r_name_MAP_r_frag_join_) > 0 {
 			new_union.RemoveAllChild()
 
-			new_union_left := PlanTreeNode{
-				Type:          UnionType,
-				FromTableName: "UnionType",
-			}.Init()
+			for r_name, r_frag_join_ := range r_name_MAP_r_frag_join_ {
+				// println("key:", r_name, " value:", r_frag_join_)
 
-			for i := 0; i < l_table_node.GetChildrenNum(); i++ {
-				cur_l_frag := *l_table_node.GetChild(i)
-				new_union_left.AddChild(&cur_l_frag)
+				new_union_left := PlanTreeNode{
+					Type: UnionType,
+					// FromTableName: l_table_node.Type.String(),
+					// Conditions:    l_table_node.Conditions,
+					// ConditionsStr: l_table_node.ConditionsStr,
+				}.Init()
+
+				for _, l_frag_join_ := range r_name_MAP_l_frag_join_[r_name] {
+					// println("idx:", idx, " l_frag_join_:", l_frag_join_)
+					new_union_left.AddChild(l_frag_join_)
+					new_union_left.FromTableName += l_frag_join_.FromTableName + "|"
+				}
+
+				new_union_join := PlanTreeNode{
+					Type:          JoinType,
+					FromTableName: new_union_left.FromTableName + "|" + r_frag_join_.FromTableName,
+					ConditionsStr: join_seq_condition[idx],
+				}.Init()
+
+				new_union_join.AddChild(new_union_left)
+				new_union_join.AddChild(r_frag_join_)
+
+				new_union.AddChild(new_union_join)
 			}
-
-			new_union_join := PlanTreeNode{
-				Type:          JoinType,
-				FromTableName: "JoinType",
-			}.Init()
-
-			new_union_join.AddChild(new_union_left)
-			new_union_join.AddChild(r_whole_frag_join_)
-
-			new_union.AddChild(new_union_join)
 		}
+
+		// if s_whole_right.Cardinality() == 1 {
+		// 	// whole right is the same, join together
+		// 	new_union.RemoveAllChild()
+
+		// 	new_union_left := PlanTreeNode{
+		// 		Type:          l_table_node.Type,
+		// 		FromTableName: l_table_node.Type.String(),
+		// 		Conditions:    l_table_node.Conditions,
+		// 		ConditionsStr: l_table_node.ConditionsStr,
+		// 	}.Init()
+		// 	// if l_table_node.
+
+		// 	// l_table_node_nums := 0
+		// 	// var l_frag_node_ptr *PlanTreeNode
+		// 	// l_frag_node_ptr = nil
+		// l_table_node.FromTableName = ""
+		// for i := 0; i < l_table_node.GetChildrenNum(); i++ {
+		// 	// todo error cut empty...
+		// 	cur_l_frag := *l_table_node.GetChild(i)
+		// 	if !cur_l_frag.IsPruned {
+		// 		new_union_left.AddChild(&cur_l_frag)
+		// 		if len(l_table_node.FromTableName) > 0 {
+		// 			l_table_node.FromTableName += "|"
+		// 		}
+		// 		l_table_node.FromTableName += cur_l_frag.FromTableName
+		// 		// l_table_node_nums++
+		// 		// l_frag_node_ptr = &cur_l_frag
+		// 	}
+		// }
+
+		// 	new_union_join := PlanTreeNode{
+		// 		Type:          JoinType,
+		// 		FromTableName: l_table_node.FromTableName + "|" + r_whole_frag_join_.FromTableName,
+		// 		ConditionsStr: join_seq_condition[idx],
+		// 	}.Init()
+
+		// 	// if l_table_node_nums > 1 {
+		// 	// 	new_union_join.AddChild(new_union_left)
+		// 	// } else {
+		// 	// 	if l_frag_node_ptr != nil {
+		// 	// 		new_union_join.AddChild(l_frag_node_ptr)
+		// 	// 	}
+		// 	// }
+		// 	new_union_join.AddChild(new_union_left)
+		// 	new_union_join.AddChild(r_whole_frag_join_)
+
+		// 	new_union.AddChild(new_union_join)
+		// }
+
 		//
 		if index_l > index_r {
 			from.RemoveChild(index_l)
@@ -1007,6 +1186,8 @@ func filterCondition(partition_info PartitionInfo, from *PlanTreeNode) ([]ast.Ex
 			if is_in_ {
 				condition_ = append(condition_, from.Conditions[i_])
 				condition_str_ = append(condition_str_, from.ConditionsStr[i_])
+			} else {
+				return condition_, condition_str_
 			}
 		}
 	} else {
@@ -1067,7 +1248,9 @@ func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_in
 
 		if len(from.ConditionsStr) > 0 {
 			from.Conditions, from.ConditionsStr = filterCondition(partition_info, from)
-
+			// if err != nil {
+			// 	return err
+			// }
 			select_node = PlanTreeNode{
 				Type:          SelectType,
 				Conditions:    from.Conditions,

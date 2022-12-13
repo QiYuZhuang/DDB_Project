@@ -97,6 +97,13 @@ func buildSelection(ctx meta.Context, where ast.ExprNode) (*PlanTreeNode, error)
 	}.Init()
 
 	selection.Conditions = conditions
+	for _, cond_ := range conditions {
+		expr, ok := cond_.(*ast.BinaryOperationExpr)
+		if !ok {
+			return selection, errors.New("fail to type cast into BinaryOperationExpr")
+		}
+		selection.ConditionsStr = append(selection.ConditionsStr, TransExprNode2Str(expr, true))
+	}
 	// selection.SetChildren(p)
 	return selection, nil
 }
@@ -250,9 +257,9 @@ func HandleSelect(ctx meta.Context, sel *ast.SelectStmt) (p *PlanTreeNode, err e
 	if err != nil {
 		return p, err
 	}
-	fmt.Println(PrunedNodeName)
+	fmt.Println("PrunedNodeName: ", PrunedNodeName)
 	fmt.Println("==================")
-	fmt.Println(UnPrunedNodeName)
+	fmt.Println("UnPrunedNodeName: ", UnPrunedNodeName)
 	fmt.Println("==================")
 	new_joined_tree, err := JoinUsingPruning(ctx, from, where, PrunedNodeName, UnPrunedNodeName)
 	if err != nil {

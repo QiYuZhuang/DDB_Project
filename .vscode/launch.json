@@ -9,12 +9,14 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "/home/zqy/go/DDB_Project/main/main.go",
-            "args": [
-                "-host",
-                "10.77.110.146"
-            ],
-            "cwd": "/home/zqy/go/DDB_Project"
+            "program": "/home/zqs/DDB_Project/plan/plan_test.go", // "${fileDirname}
+            "cwd":"/home/zqs/DDB_Project"
+            // "/home/bigdata/Course3-DDB/DDB_Project/main/main.go",
+            // "args": [
+            //     "-host",
+            //     "10.77.110.146"
+            // ],
+            // "cwd": "/home/bigdata/Course3-DDB/DDB_Project"
         }
     ]
 }
