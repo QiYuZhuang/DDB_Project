@@ -1001,10 +1001,10 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 				// println("key:", r_name, " value:", r_frag_join_)
 
 				new_union_left := PlanTreeNode{
-					Type: UnionType,
+					Type: l_table_node.Type,
 					// FromTableName: l_table_node.Type.String(),
-					// Conditions:    l_table_node.Conditions,
-					// ConditionsStr: l_table_node.ConditionsStr,
+					Conditions:    l_table_node.Conditions,
+					ConditionsStr: l_table_node.ConditionsStr,
 				}.Init()
 
 				for _, l_frag_join_ := range r_name_MAP_l_frag_join_[r_name] {
