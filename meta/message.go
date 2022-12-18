@@ -25,7 +25,9 @@ type Message struct {
 	Type      MessageType `json:"type"`
 	Length    uint32      `json:"length"`
 	Src       string      `json:"src_machine_id"`
+	SrcPort   string      `json:"source_port"`
 	Dst       string      `json:"dest_machine_id"`
+	DstPort   string      `json:"dest_port"`
 	TxnId     uint64      `json:"txn_id"`
 	QueryId   int         `json:"query_id"`
 	Query     string      `json:"query"`
@@ -38,13 +40,15 @@ type Message struct {
 	Error     bool        `json:"error"`
 }
 
-func NewMessage(t MessageType, src string, dst string, txn_id uint64) *Message {
+func NewMessage(t MessageType, src string, src_port string, dst string, dst_port string, txn_id uint64) *Message {
 	return &Message{
-		Type:  t,
-		Src:   src,
-		Dst:   dst,
-		TxnId: txn_id,
-		Time:  time.Now(),
+		Type:    t,
+		Src:     src,
+		SrcPort: src_port,
+		Dst:     dst,
+		DstPort: dst_port,
+		TxnId:   txn_id,
+		Time:    time.Now(),
 	}
 }
 
@@ -86,16 +90,16 @@ func (m *Message) SetTableName(table_name string) {
 	m.TableName = table_name
 }
 
-func NewQueryRequestMessage(local_ip string, remote_ip string, txnId uint64) *Message {
+func NewQueryRequestMessage(local_ip string, local_port string, remote_ip string, remote_port string, txnId uint64) *Message {
 	// router
-	message := NewMessage(QueryRequest, local_ip, remote_ip, txnId)
+	message := NewMessage(QueryRequest, local_ip, local_port, remote_ip, remote_port, txnId)
 	message.SetMessageLength(0)
 	return message
 }
 
-func NewDataLoadRequestMessage(local_ip string, remote_ip string, txnId uint64) *Message {
+func NewDataLoadRequestMessage(local_ip string, local_port string, remote_ip string, remote_port string, txnId uint64) *Message {
 	// router
-	message := NewMessage(DataLoadRequest, local_ip, remote_ip, txnId)
+	message := NewMessage(DataLoadRequest, local_ip, local_port, remote_ip, remote_port, txnId)
 	message.SetMessageLength(0)
 	return message
 }

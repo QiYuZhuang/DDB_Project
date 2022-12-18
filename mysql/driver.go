@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	cfg "project/config"
+	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -11,7 +12,12 @@ import (
 // connect to local database
 func SQLDriverInit(ctx *cfg.Context) {
 	l := ctx.Logger
-	dataSourceName := fmt.Sprintf("%s:Bigdata123!@#@tcp(%s:%s)/%s?charset=utf8", ctx.DB_name, ctx.DB_host, ctx.DB_port, ctx.DB_name)
+	if strings.EqualFold(ctx.DB_port, "10800") {
+		ctx.DB_port = "3306"
+	} else {
+		ctx.DB_port = "3307"
+	}
+	dataSourceName := fmt.Sprintf("%s:Bigdata123!@#@tcp(%s:%s)/%s?charset=utf8", ctx.DB_name, ctx.DB_host, "3306", ctx.DB_name)
 	driverName := ctx.DB_type
 	l.Debugln("dataSourceName", dataSourceName)
 	l.Debugln("driverName", driverName)

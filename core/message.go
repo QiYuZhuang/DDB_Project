@@ -63,7 +63,7 @@ func QueryRequestHandler(m meta.Message, c *Coordinator) error {
 
 	u, _ := user.Current()
 
-	resp := meta.NewMessage(meta.QueryResponse, m.Dst, m.Src, m.TxnId)
+	resp := meta.NewMessage(meta.QueryResponse, m.Dst, m.DstPort, m.Src, m.SrcPort, m.TxnId)
 	resp.SetQueryId(m.QueryId)
 	if utils.ContainString(m.Query, "SELECT", true) {
 		rows, err := db.Query(m.Query)

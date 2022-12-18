@@ -85,7 +85,7 @@ func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 			if !ok {
 				l.Errorln("element to message failed")
 			}
-			l.Infoln("src: " + m.Src + " dst: " + m.Dst)
+			l.Infoln("src: [ip: " + m.Src + " port: " + m.SrcPort + "] dst: [ip: " + m.Dst + " port: " + m.DstPort + "]")
 
 			if data, err := json.Marshal(m); err == nil {
 				data_len := make([]byte, 4)
@@ -151,7 +151,7 @@ func FindDestMachineId(peers []meta.Peer, m meta.Message) int {
 
 	for i := 0; i < len(peers); i++ {
 		p := peers[i]
-		if p.Ip == m.Dst {
+		if p.Ip == m.Dst && p.Port == m.DstPort {
 			idx = int(p.Id)
 			break
 		}
