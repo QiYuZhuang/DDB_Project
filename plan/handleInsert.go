@@ -146,6 +146,7 @@ func GenInsertSQL(insert_requests []InsertRequest) ([]meta.SqlRouter, error) {
 		cur_sql := "insert into " + insert_req.Siteinfo.FragName + "(" + table_cols + ") values " + "(" + table_vals + ");"
 		var cur_insert meta.SqlRouter
 		cur_insert.Site_ip = insert_req.Siteinfo.IP
+		cur_insert.Site_port = insert_req.Siteinfo.Port
 		cur_insert.Sql = cur_sql
 		ret = append(ret, cur_insert)
 	}
@@ -206,6 +207,7 @@ func HandleDelete(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, error)
 			site_name_ := partition_meta.HFragInfos[frag_index].FragName
 			var sql_router_ meta.SqlRouter
 			sql_router_.Site_ip = partition_meta.SiteInfos[frag_index].IP
+			sql_router_.Site_port = partition_meta.SiteInfos[frag_index].Port
 			sql_router_.Sql = sql
 			sql_router_.Sql = strings.Replace(sql_router_.Sql, table_meta.TableName, site_name_, 1)
 		}
@@ -229,6 +231,7 @@ func BroadcastSQL(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, error)
 	for _, peer := range ctx.Peers {
 		var per meta.SqlRouter
 		per.Site_ip = peer.Ip
+		per.Site_port = peer.Port
 		per.Sql = sql
 		ret = append(ret, per)
 	}

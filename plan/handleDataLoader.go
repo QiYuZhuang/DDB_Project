@@ -120,6 +120,7 @@ func fragDataLoadHandle(ctx meta.Context, partition_meta meta.Partition, frag_na
 		File_path: tmp_filepath,
 		Sql:       data_load_sql,
 		Site_ip:   partition_meta.SiteInfos[idx].IP,
+		Site_port: partition_meta.SiteInfos[idx].Port,
 	}
 
 	return router, nil

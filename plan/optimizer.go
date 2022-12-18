@@ -137,10 +137,12 @@ func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
 		if frags_.FragType == meta.Horizontal {
 			p.Type = UnionType
 			node := PlanTreeNode{
-				Type:                  DataSourceType,
-				FromTableName:         site_info.FragName,
-				ExecuteSiteIPwithPort: site_info.IP + ":" + site_info.Port,
-				DestSiteIPwithPort:    ctx.IP + ":" + site_info.Port,
+				Type:            DataSourceType,
+				FromTableName:   site_info.FragName,
+				ExecuteSiteIP:   site_info.IP,
+				ExecuteSitePort: site_info.Port,
+				DestSiteIP:      ctx.IP,
+				DestSitePort:    site_info.Port,
 			}.Init()
 			//
 			conds_, conds_str_, _ := InitFragWithCondition(frags_, site_info.FragName)
@@ -155,10 +157,12 @@ func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
 			}
 
 			node := PlanTreeNode{
-				Type:                  DataSourceType,
-				FromTableName:         site_info.FragName,
-				ExecuteSiteIPwithPort: site_info.IP + ":" + site_info.Port,
-				DestSiteIPwithPort:    ctx.IP + ":" + site_info.Port,
+				Type:            DataSourceType,
+				FromTableName:   site_info.FragName,
+				ExecuteSiteIP:   site_info.IP,
+				ExecuteSitePort: site_info.Port,
+				DestSiteIP:      ctx.IP,
+				DestSitePort:    site_info.Port,
 				// ConditionsStr: conditions_str_,
 			}.Init()
 			_, _, cols_ := InitFragWithCondition(frags_, site_info.FragName)
@@ -1252,21 +1256,25 @@ func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_in
 			// 	return err
 			// }
 			select_node = PlanTreeNode{
-				Type:                  SelectType,
-				Conditions:            from.Conditions,
-				ConditionsStr:         from.ConditionsStr,
-				ExecuteSiteIPwithPort: from.ExecuteSiteIPwithPort,
-				DestSiteIPwithPort:    from.DestSiteIPwithPort,
+				Type:            SelectType,
+				Conditions:      from.Conditions,
+				ConditionsStr:   from.ConditionsStr,
+				ExecuteSiteIP:   from.ExecuteSiteIP,
+				ExecuteSitePort: from.ExecuteSitePort,
+				DestSiteIP:      from.DestSiteIP,
+				DestSitePort:    from.DestSitePort,
 			}.Init()
 		}
 		if len(from.ColsName) > 0 {
 			from.ColsName = filterColumns(partition_info, from)
 
 			proj_node = PlanTreeNode{
-				Type:                  ProjectionType,
-				ColsName:              from.ColsName,
-				ExecuteSiteIPwithPort: from.ExecuteSiteIPwithPort,
-				DestSiteIPwithPort:    from.DestSiteIPwithPort,
+				Type:            ProjectionType,
+				ColsName:        from.ColsName,
+				ExecuteSiteIP:   from.ExecuteSiteIP,
+				ExecuteSitePort: from.ExecuteSitePort,
+				DestSiteIP:      from.DestSiteIP,
+				DestSitePort:    from.DestSitePort,
 			}.Init()
 		}
 
