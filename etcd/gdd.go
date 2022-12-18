@@ -664,6 +664,49 @@ func DropTablefromEtcd(tablename string) error {
 	return nil
 }
 
+func DropPartitionfromEtcd(tablename string) error {
+	exist_tables, err := GetPartitionTablenames()
+	if err != nil {
+		fmt.Println("drop partition from etcd failed")
+		return err
+	}
+
+	k1 := "/patition_tablenames"
+	v1 := ""
+	for i := 0; i < len(exist_tables); i++ {
+		if len(v1) > 0 {
+			v1 += ","
+		}
+		if exist_tables[i] != tablename {
+			v1 += exist_tables[i]
+		}
+	}
+
+	PutKey(k1, v1)
+	fragmenttype, err := GetFragmentType(tablename)
+	if err != nil {
+		fmt.Println("drop partition from etcd failed")
+		return err
+	}
+
+	k2 := "/patitions/" + tablename
+	err = DeletevalwithPrefix(k2)
+
+	if err != nil {
+		fmt.Println("drop partition meta from etcd error")
+		return err
+	}
+
+	k3 := "/patitions/" + tablename + "/" + fragmenttype
+	err = DeletevalwithPrefix(k3)
+
+	if err != nil {
+		fmt.Println("drop partition meta from etcd error")
+		return err
+	}
+	return nil
+}
+
 func bytetoString(b []byte) string {
 	return *(*string)(unsafe.Pointer(&b))
 }
