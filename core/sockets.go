@@ -47,9 +47,9 @@ func ConnectionHandler(c *Coordinator, conn net.Conn) {
 
 func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 	l := c.Context.Logger
-	port := "10800"
-	address := fmt.Sprintf("%s:%s", c.Peers[peer_idx].Ip, port)
-	maxRetry := 25
+	// port := "1080" + strconv.Itoa(peer_idx)
+	address := fmt.Sprintf("%s:%s", c.Peers[peer_idx].Ip, c.Peers[peer_idx].Port)
+	maxRetry := 120
 	cntRetry := 1
 	var conn net.Conn
 	var err error
@@ -118,8 +118,8 @@ func CreateDispatcherSockets(c *Coordinator) {
 
 func CreateInputSockets(c *Coordinator) {
 	l := c.Context.Logger
-	port := "10800"
-	address := fmt.Sprintf("%s:%s", c.Context.DB_host, port)
+	// port := "1080" + strconv.Itoa(int(c.Id))
+	address := fmt.Sprintf("%s:%s", c.Context.DB_host, c.Context.ServerPort)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		l.Error("socket listen failed", err)

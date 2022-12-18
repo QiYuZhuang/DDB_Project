@@ -15,6 +15,7 @@ import (
 	"project/mysql"
 	"project/plan"
 	"project/utils"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -251,7 +252,8 @@ func (c *Coordinator) process(sql string) meta.BackToClient {
 
 func (c *Coordinator) wait_for_local_connection() {
 	l := c.Context.Logger
-	port := "10900"
+	server_port, _ := strconv.Atoi(c.Context.ServerPort)
+	port := strconv.Itoa(server_port + 100)
 	address := fmt.Sprintf("%s:%s", c.Context.DB_host, port)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {

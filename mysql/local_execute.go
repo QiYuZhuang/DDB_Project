@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"database/sql"
+	"project/etcd"
 	"project/meta"
 	"project/utils"
 
@@ -138,5 +139,23 @@ func LocalExecInternalSql(ctx *meta.Context, sql string, filepath string, query_
 		}
 	}
 
+	return nil
+}
+
+func CreateTempTable(ctx *meta.Context, table_name string, columns []meta.Column) error {
+	var table_meta meta.TableMeta
+
+	l := ctx.Logger
+
+	table_meta.TableName = table_name
+	table_meta.Columns = columns
+	table_meta.IsTemp = true
+
+	if err := etcd.SaveTabletoEtcd(table_meta); err != nil {
+		l.Errorln("save data to etcd error")
+		return err
+	}
+
+	l.Infoln("create temp table and save into etcd, table_name:", table_name)
 	return nil
 }

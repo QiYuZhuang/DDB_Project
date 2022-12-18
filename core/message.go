@@ -76,7 +76,7 @@ func QueryRequestHandler(m meta.Message, c *Coordinator) error {
 		resp.SetRowCnt(row_cnt)
 
 		// select into tmp file
-		tmp_filename := "INTER_TMP_%" + m.TableName + "%_" + strconv.FormatInt(int64(m.TxnId), 10) + "_" + strconv.FormatInt(int64(m.QueryId), 10) + ".csv"
+		tmp_filename := "INTER_TMP_" + strconv.FormatInt(int64(m.TxnId), 10) + "_" + strconv.FormatInt(int64(m.QueryId), 10) + ".csv"
 		tmp_path := "/tmp/data/" + tmp_filename
 		tmp_sql := utils.GenerateSelectIntoFileSql(strings.Trim(m.Query, ";"), tmp_path, "|", "")
 		_, err = db.Exec(tmp_sql)
