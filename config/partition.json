@@ -6,19 +6,23 @@
             "site_info": [
                 {
                     "frag_name": "PUBLISHER_1",
-                    "ip": "10.77.110.145"
+                    "ip": "10.77.110.145",
+                    "port": "3306"
                 },
                 {
                     "frag_name": "PUBLISHER_2",
-                    "ip": "10.77.110.146"
+                    "ip": "10.77.110.146",
+                    "port": "3306"
                 },
                 {
                     "frag_name": "PUBLISHER_3",
-                    "ip": "10.77.110.145"
+                    "ip": "10.77.110.145",
+                    "port": "3306"
                 },
                 {
                     "frag_name": "PUBLISHER_4",
-                    "ip": "10.77.110.146"
+                    "ip": "10.77.110.146",
+                    "port": "3306"
                 }
             ], 
             "fragmentation_type": 0, 
@@ -101,11 +105,13 @@
             "site_info": [
                 {
                     "frag_name": "CUSTOMER_1",
-                    "ip": "10.77.110.145"
+                    "ip": "10.77.110.145",
+                    "port": "3306"
                 },
                 {
                     "frag_name": "CUSTOMER_2",
-                    "ip": "10.77.110.146"
+                    "ip": "10.77.110.146",
+                    "port": "3306"
                 }
             ], 
             "fragmentation_type": 1, 
@@ -127,19 +133,23 @@
             "site_info": [
                 {
                     "frag_name": "ORDERS_1",
-                    "ip": "10.77.110.145"
+                    "ip": "10.77.110.145",
+                    "port": "3306"
                 },
                 {
                     "frag_name": "ORDERS_2",
-                    "ip": "10.77.110.146"
+                    "ip": "10.77.110.146",
+                    "port": "3306"
                 },
                 {
                     "frag_name": "ORDERS_3",
-                    "ip": "10.77.110.145"
+                    "ip": "10.77.110.145",
+                    "port": "3306"
                 },
                 {
                     "frag_name": "ORDERS_4",
-                    "ip": "10.77.110.146"
+                    "ip": "10.77.110.146",
+                    "port": "3306"
                 }
             ], 
             "fragmentation_type": 0, 
@@ -221,15 +231,18 @@
             "site_info": [
                 {
                     "frag_name": "BOOK_1",
-                    "ip": "10.77.110.145"
+                    "ip": "10.77.110.145",
+                    "port": "3306"
                 },
                 {
                     "frag_name": "BOOK_2",
-                    "ip": "10.77.110.146"
+                    "ip": "10.77.110.146",
+                    "port": "3306"
                 },
                 {
                     "frag_name": "BOOK_3",
-                    "ip": "10.77.110.145"
+                    "ip": "10.77.110.145",
+                    "port": "3306"
                 }
             ], 
             "fragmentation_type": 0, 

@@ -71,6 +71,7 @@ func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, e
 			site_name_ := partition_meta.HFragInfos[frag_index].FragName
 			var sql_router_ meta.SqlRouter
 			sql_router_.Site_ip = partition_meta.SiteInfos[frag_index].IP
+			sql_router_.Site_port = partition_meta.SiteInfos[frag_index].Port
 			sql_router_.Sql = sql
 			sql_router_.Sql = strings.Replace(sql_router_.Sql, tablename, site_name_, 1)
 			ret = append(ret, sql_router_)
@@ -122,6 +123,7 @@ func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, e
 				break
 			}
 			per.Site_ip = partition_meta.SiteInfos[frag_index_].IP
+			per.Site_port = partition_meta.SiteInfos[frag_index_].Port
 			per.Sql = "create table " + partition_meta.VFragInfos[frag_index_].FragName + " ( " + col_sql_str + " )"
 			ret = append(ret, per)
 		}
@@ -179,6 +181,7 @@ func HandleDropTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, err
 		}
 		var sql_router_ meta.SqlRouter
 		sql_router_.Site_ip = site_info.IP
+		sql_router_.Site_port = site_info.Port
 		sql_router_.Sql = sql
 		sql_router_.Sql = strings.Replace(sql_router_.Sql, table_meta.TableName, site_name_, 1)
 		ret = append(ret, sql_router_)

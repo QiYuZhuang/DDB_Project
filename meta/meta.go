@@ -143,6 +143,7 @@ type SqlRouter struct {
 	File_path string
 	Sql       string
 	Site_ip   string
+	Site_port string
 }
 
 type Peer struct {
