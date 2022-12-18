@@ -252,6 +252,7 @@ func TestParseDebugLocal(t *testing.T) {
 		TableMetas:      table_metas,
 		Peers:           c.Peers[:],
 		IP:              c.Peers[c.Id].Ip,
+		Port:            c.Peers[c.Id].Port,
 		IsDebugLocal:    true,
 	}
 
@@ -334,7 +335,7 @@ func TestParseDebugLocal(t *testing.T) {
 		// `select Book.title,Book.copies,  Publisher.name,Publisher.nation from Book,Publisher where Book.publisher_id=Publisher.id and Publisher.nation='USA' and Book.copies > 1000`,
 
 		// 6
-		// `select Customer.name,Orders.quantity from Customer,Orders where Customer.id=Orders.customer_id`,
+		`select Customer.name,Orders.quantity from Customer,Orders where Customer.id=Orders.customer_id`,
 
 		// 7
 		// `select Customer.name,Customer.rank_, Orders.quantity from Customer,Orders where Customer.id=Orders.customer_id and Customer.rank_=1`, // not best
@@ -343,7 +344,7 @@ func TestParseDebugLocal(t *testing.T) {
 		// `select Customer.name ,Orders.quantity, Book.title from Customer,Orders,Book where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Customer.rank_=1 and Book.copies>5000`, // not best
 
 		// 9
-		` select Customer.name, Book.title, Publisher.name, Orders.quantity from Customer, Book, Publisher, Orders where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Book.publisher_id=Publisher.id and Book.id>220000 and Publisher.nation='USA' and Orders.quantity>1`, // not best
+		// ` select Customer.name, Book.title, Publisher.name, Orders.quantity from Customer, Book, Publisher, Orders where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Book.publisher_id=Publisher.id and Book.id>220000 and Publisher.nation='USA' and Orders.quantity>1`, // not best
 
 		// 10
 		// `select Customer.name, Book.title,Publisher.name, Orders.quantity from Customer, Book, Publisher, Orders where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Book.publisher_id=Publisher.id and Customer.id>308000 and Book.copies>100 and Orders.quantity>1 and Publisher.nation='PRC';`,

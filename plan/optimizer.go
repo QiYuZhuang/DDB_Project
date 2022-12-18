@@ -137,10 +137,10 @@ func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
 		if frags_.FragType == meta.Horizontal {
 			p.Type = UnionType
 			node := PlanTreeNode{
-				Type:          DataSourceType,
-				FromTableName: site_info.FragName,
-				ExecuteSiteIP: site_info.IP,
-				DestSiteIP:    ctx.IP,
+				Type:                  DataSourceType,
+				FromTableName:         site_info.FragName,
+				ExecuteSiteIPwithPort: site_info.IP + ":" + site_info.Port,
+				DestSiteIPwithPort:    ctx.IP + ":" + site_info.Port,
 			}.Init()
 			//
 			conds_, conds_str_, _ := InitFragWithCondition(frags_, site_info.FragName)
@@ -155,10 +155,10 @@ func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
 			}
 
 			node := PlanTreeNode{
-				Type:          DataSourceType,
-				FromTableName: site_info.FragName,
-				ExecuteSiteIP: site_info.IP,
-				DestSiteIP:    ctx.IP,
+				Type:                  DataSourceType,
+				FromTableName:         site_info.FragName,
+				ExecuteSiteIPwithPort: site_info.IP + ":" + site_info.Port,
+				DestSiteIPwithPort:    ctx.IP + ":" + site_info.Port,
 				// ConditionsStr: conditions_str_,
 			}.Init()
 			_, _, cols_ := InitFragWithCondition(frags_, site_info.FragName)
@@ -1252,21 +1252,21 @@ func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_in
 			// 	return err
 			// }
 			select_node = PlanTreeNode{
-				Type:          SelectType,
-				Conditions:    from.Conditions,
-				ConditionsStr: from.ConditionsStr,
-				ExecuteSiteIP: from.ExecuteSiteIP,
-				DestSiteIP:    from.DestSiteIP,
+				Type:                  SelectType,
+				Conditions:            from.Conditions,
+				ConditionsStr:         from.ConditionsStr,
+				ExecuteSiteIPwithPort: from.ExecuteSiteIPwithPort,
+				DestSiteIPwithPort:    from.DestSiteIPwithPort,
 			}.Init()
 		}
 		if len(from.ColsName) > 0 {
 			from.ColsName = filterColumns(partition_info, from)
 
 			proj_node = PlanTreeNode{
-				Type:          ProjectionType,
-				ColsName:      from.ColsName,
-				ExecuteSiteIP: from.ExecuteSiteIP,
-				DestSiteIP:    from.DestSiteIP,
+				Type:                  ProjectionType,
+				ColsName:              from.ColsName,
+				ExecuteSiteIPwithPort: from.ExecuteSiteIPwithPort,
+				DestSiteIPwithPort:    from.DestSiteIPwithPort,
 			}.Init()
 		}
 

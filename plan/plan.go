@@ -72,9 +72,9 @@ type PlanTreeNode struct {
 	// ProjectionType
 	ColsName []string
 
-	IsPruned      bool
-	ExecuteSiteIP string
-	DestSiteIP    string
+	IsPruned              bool
+	ExecuteSiteIPwithPort string
+	DestSiteIPwithPort    string
 }
 
 func (p PlanTreeNode) Init() *PlanTreeNode {
@@ -325,8 +325,8 @@ func OptimizeTransmission(ctx meta.Context, p *PlanTreeNode) {
 			for i := 0; i < nums; i++ {
 				cur_node := v.GetChild(i)
 				if cur_node.Type == JoinType || cur_node.Type == UnionType {
-					cur_node.ExecuteSiteIP = ctx.IP
-					cur_node.DestSiteIP = ctx.IP
+					cur_node.ExecuteSiteIPwithPort = ctx.IP + ":" + ctx.Port
+					cur_node.DestSiteIPwithPort = ctx.IP + ":" + ctx.Port
 				}
 
 				temp = append(temp, cur_node)

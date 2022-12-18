@@ -51,7 +51,7 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 			select_sql string
 		)
 
-		is_remote = !utils.ContainString(ctx.IP, node.ExecuteSiteIP, false)
+		is_remote = !utils.ContainString(ctx.IP, node.ExecuteSiteIPwithPort, false)
 
 		attributes := ""
 		references := ""
@@ -84,7 +84,7 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 		// tmp path is `/home/<username>`, filename is `TMP_<IP>_<table_name>.csv`
 		if is_remote {
 			// create message
-			m := meta.NewQueryRequestMessage(ctx.IP, node.ExecuteSiteIP, txn.TxnId)
+			m := meta.NewQueryRequestMessage(ctx.IP, node.ExecuteSiteIPwithPort, txn.TxnId)
 			m.SetQueryId(query_id)
 			m.SetQuery(select_sql)
 			m.SetTableName(table_name)

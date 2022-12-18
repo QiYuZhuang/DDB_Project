@@ -170,6 +170,7 @@ func (c *Coordinator) process(sql string) meta.BackToClient {
 		TablePartitions: c.Partitions,
 		Peers:           c.Peers[:],
 		IP:              c.Context.DB_host,
+		Port:            c.Context.DB_port,
 		DB:              c.Context.DB,
 		Logger:          c.Context.Logger,
 		IsDebugLocal:    true,

@@ -157,6 +157,7 @@ type Context struct {
 	TablePartitions Partitions
 	Peers           []Peer
 	IP              string
+	Port            string
 	DB              *sql.DB
 	Logger          *logrus.Logger
 	IsDebugLocal    bool
