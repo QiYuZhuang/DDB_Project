@@ -600,6 +600,7 @@ func ParseAndExecute(ctx meta.Context, sql_str string) (meta.StmtType, *PlanTree
 		default:
 			// createdb, dropdb, all broadcast
 			ret, err = BroadcastSQL(ctx, x)
+			sql_type = meta.CreateTableStmtType
 		}
 	}
 	if err != nil {

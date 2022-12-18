@@ -15,6 +15,7 @@ import (
 	"project/mysql"
 	"project/plan"
 	"project/utils"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,7 +71,7 @@ func (c *Coordinator) FindPeers(filename string) {
 		if line[0] != '[' {
 			l.Debugln(line)
 			arr := strings.Fields(line)
-			if arr[0] == c.Context.DB_host {
+			if arr[0] == c.Context.DB_host && arr[1] == c.Context.ServerPort {
 				c.Id = machine_id
 			}
 			p := meta.Peer{
@@ -170,7 +171,7 @@ func (c *Coordinator) process(sql string) meta.BackToClient {
 		TablePartitions: c.Partitions,
 		Peers:           c.Peers[:],
 		IP:              c.Context.DB_host,
-		Port:            c.Context.DB_port,
+		Port:            c.Context.ServerPort,
 		DB:              c.Context.DB,
 		Logger:          c.Context.Logger,
 		IsDebugLocal:    true,
@@ -199,10 +200,10 @@ func (c *Coordinator) process(sql string) meta.BackToClient {
 		for i, s := range sqls {
 			var m *meta.Message
 			if len(s.File_path) != 0 {
-				m = meta.NewDataLoadRequestMessage(ctx.IP, s.Site_ip, txn.TxnId)
+				m = meta.NewDataLoadRequestMessage(ctx.IP, ctx.Port, s.Site_ip, s.Site_port, txn.TxnId)
 				m.SetFilepath(s.File_path)
 			} else {
-				m = meta.NewQueryRequestMessage(ctx.IP, s.Site_ip, txn.TxnId)
+				m = meta.NewQueryRequestMessage(ctx.IP, ctx.Port, s.Site_ip, s.Site_port, txn.TxnId)
 			}
 			m.SetQueryId(i)
 			m.SetQuery(s.Sql)
@@ -252,7 +253,8 @@ func (c *Coordinator) process(sql string) meta.BackToClient {
 
 func (c *Coordinator) wait_for_local_connection() {
 	l := c.Context.Logger
-	port := "10900"
+	server_port, _ := strconv.Atoi(c.Context.ServerPort)
+	port := strconv.Itoa(server_port + 100)
 	address := fmt.Sprintf("%s:%s", c.Context.DB_host, port)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {

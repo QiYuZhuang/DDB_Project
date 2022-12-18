@@ -11,6 +11,11 @@ import (
 	logger "project/utils/log"
 )
 
+// site1 145
+// site2 146:10800
+// site3 146:10880
+// site4 148
+
 func main() {
 	// fill context with command args
 	fmt.Println("命令行参数数量:", len(os.Args))

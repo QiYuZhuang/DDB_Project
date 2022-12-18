@@ -9,7 +9,7 @@ type argvs struct {
 	db_type           string
 	db_name           string
 	db_host           string
-	db_port           string
+	server_port       string
 	release           bool
 	debug             bool
 	fragment_strategy string
@@ -20,7 +20,7 @@ func (args *argvs) ParseArgsInit() {
 	flag.StringVar(&args.db_type, "engine", "mysql", "type of database: mysql/custome")
 	flag.StringVar(&args.db_name, "dbname", "ddb", "name of database")
 	flag.StringVar(&args.db_host, "host", "127.0.0.1", "machine's ip")
-	flag.StringVar(&args.db_port, "port", "3306", "machine's port")
+	flag.StringVar(&args.server_port, "port", "10800", "machine's port")
 	flag.BoolVar(&args.debug, "debug", false, "debug version")
 	flag.BoolVar(&args.release, "release", false, "release version")
 	flag.StringVar(&args.fragment_strategy, "strategy", "", "fragment strategy: horizontal/vertical/hybrid")
@@ -37,8 +37,8 @@ func (args *argvs) assign_to_context(ctx *cfg.Context) {
 	if args.db_host != "" {
 		ctx.DB_host = args.db_host
 	}
-	if args.db_port != "" {
-		ctx.DB_port = args.db_port
+	if args.server_port != "" {
+		ctx.ServerPort = args.server_port
 	}
 	if args.debug {
 		ctx.Debug = true

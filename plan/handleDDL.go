@@ -133,6 +133,7 @@ func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, e
 
 	if !ctx.IsDebugLocal {
 		// 把table_meta存入etcd
+		table_meta.IsTemp = false
 		err = etcd.SaveTabletoEtcd(table_meta)
 	}
 
@@ -165,7 +166,7 @@ func HandleDropTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, err
 
 	if !ctx.IsDebugLocal {
 		//drop datameta from etcd
-		err = etcd.DropTablefromEtcd(tablename)
+		err = etcd.DropTablefromEtcd(tablename, false)
 	}
 	if err != nil {
 		fmt.Println("handle drop table error")

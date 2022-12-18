@@ -196,7 +196,7 @@ func sendToDestMachine(username string, filepath string, src string, site meta.S
 		return errors.New("filepath and fragment name are not matched")
 	}
 
-	if strings.EqualFold(src, site.IP) {
+	if strings.EqualFold(src, site.IP) && site.Port != "10880" {
 		return nil
 	}
 

@@ -120,8 +120,17 @@ func DeletevalwithPrefix(key string) error {
 	return nil
 }
 
-func GetTables() ([]string, error) {
-	tablestr, err := GetKey("/tables")
+func GetTables(is_temp bool) ([]string, error) {
+	var (
+		tablestr []byte
+		err      error
+	)
+	if is_temp {
+		tablestr, err = GetKey("/temp_tables")
+	} else {
+		tablestr, err = GetKey("/tables")
+	}
+
 	if err != nil {
 		fmt.Println("get table failed")
 		return nil, err
@@ -141,7 +150,7 @@ func GetPartitionTablenames() ([]string, error) {
 }
 
 func SaveTabletoEtcd(table meta.TableMeta) error {
-	exist_tables, err := GetTables()
+	exist_tables, err := GetTables(table.IsTemp)
 	if err != nil {
 		fmt.Println("save table meta to etcd failed")
 		return err
@@ -153,7 +162,12 @@ func SaveTabletoEtcd(table meta.TableMeta) error {
 		}
 	}
 
-	k1 := "/tables"
+	var k1 string
+	if table.IsTemp {
+		k1 = "/temp_tables"
+	} else {
+		k1 = "/tables"
+	}
 	v1 := strings.Join(exist_tables, ",")
 	if len(v1) == 0 {
 		v1 += table.TableName
@@ -164,7 +178,7 @@ func SaveTabletoEtcd(table meta.TableMeta) error {
 	//存放tables信息-->table
 	PutKey(k1, v1)
 
-	k2 := "/tables/" + table.TableName
+	k2 := k1 + "/" + table.TableName
 	v2 := ""
 
 	for i := 0; i < len(table.Columns); i++ {
@@ -369,7 +383,7 @@ func getTableColumnType(tablename string, columnname string) (meta.FieldType, er
 }
 
 func getTableMetas() (meta.TableMetas, error) {
-	tablenames, err := GetTables()
+	tablenames, err := GetTables(false)
 	var res meta.TableMetas
 	if err != nil {
 		fmt.Println("get table metas failed")
@@ -638,8 +652,8 @@ func GetPartition(tablename string) (meta.Partition, error) {
 	}
 }
 
-func DropTablefromEtcd(tablename string) error {
-	exist_tables, err := GetTables()
+func DropTablefromEtcd(tablename string, is_temp bool) error {
+	exist_tables, err := GetTables(is_temp)
 	if err != nil {
 		fmt.Println("drop table from etcd failed")
 		return err

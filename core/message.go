@@ -76,7 +76,7 @@ func QueryRequestHandler(m meta.Message, c *Coordinator) error {
 		resp.SetRowCnt(row_cnt)
 
 		// select into tmp file
-		tmp_filename := "INTER_TMP_%" + m.TableName + "%_" + strconv.FormatInt(int64(m.TxnId), 10) + "_" + strconv.FormatInt(int64(m.QueryId), 10) + ".csv"
+		tmp_filename := "INTER_TMP_" + strconv.FormatInt(int64(m.TxnId), 10) + "_" + strconv.FormatInt(int64(m.QueryId), 10) + ".csv"
 		tmp_path := "/tmp/data/" + tmp_filename
 		tmp_sql := utils.GenerateSelectIntoFileSql(strings.Trim(m.Query, ";"), tmp_path, "|", "")
 		_, err = db.Exec(tmp_sql)
@@ -124,12 +124,11 @@ func QueryResponseHandler(m meta.Message, c *Coordinator) error {
 			return errors.New("invaild arguments")
 		}
 
-		txn.Responses[query_id] = true
 		txn.EffectRows[query_id] = m.RowCnt
 		if len(m.Filepath) != 0 || len(m.Filename) != 0 {
 			txn.TmpResultInFile[query_id] = m.Filename
 		}
-
+		txn.Responses[query_id] = true
 		return nil
 	} else {
 		l.Errorln("can not find active transcation, id is ", txn.TxnId)
@@ -160,7 +159,7 @@ func DataLoadRequestHandler(m meta.Message, c *Coordinator) error {
 
 	u, _ := user.Current()
 
-	resp := meta.NewMessage(meta.QueryResponse, m.Dst, m.Src, m.TxnId)
+	resp := meta.NewMessage(meta.QueryResponse, m.Dst, m.DstPort, m.Src, m.SrcPort, m.TxnId)
 	resp.SetQueryId(m.QueryId)
 
 	_, filename := filepath.Split(m.Filepath)

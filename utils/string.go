@@ -9,3 +9,7 @@ func ContainString(str1 string, str2 string, ignore bool) bool {
 		return strings.Contains(str1, str2)
 	}
 }
+
+func PruneTableName(str string, delim string) {
+	// return
+}

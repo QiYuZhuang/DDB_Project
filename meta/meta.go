@@ -5,6 +5,7 @@ import (
 	"errors"
 	"project/utils"
 	"strconv"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 )
@@ -89,6 +90,43 @@ type TableMetas struct {
 type TableMeta struct {
 	TableName string   `json:"table_name"`
 	Columns   []Column `json:"columns"`
+	IsTemp    bool     `json:"temp_table"`
+}
+
+func (t TableMeta) FindColumnByName(col_name string) (Column, error) {
+	var col Column
+	for _, c := range t.Columns {
+		if strings.EqualFold(c.ColumnName, col_name) {
+			return c, nil
+		}
+	}
+	return col, errors.New("cannot find column, name is" + col_name)
+}
+
+func (t TableMeta) EqualTableMeta(other TableMeta) bool {
+	if len(t.Columns) != len(other.Columns) {
+		return false
+	}
+
+	for i := 0; i < len(t.Columns); i++ {
+		if !t.Columns[i].EqualColumn(other.Columns[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (t *TableMeta) EraseColumnByName(table_name string, column_name string) {
+	for i := 0; i < len(t.Columns); i++ {
+		if strings.EqualFold(t.Columns[i].ColumnName, table_name+"$"+column_name) {
+			t.Columns = append(t.Columns[:i], t.Columns[i+1:]...)
+			return
+		}
+	}
+}
+
+func (t *TableMeta) EraseColumnByIdx(idx int) {
+	t.Columns = append(t.Columns[:idx], t.Columns[idx+1:]...)
 }
 
 type FieldType int
@@ -139,6 +177,14 @@ type Column struct {
 	Type       FieldType `json:"type"`
 }
 
+func (c Column) EqualColumn(other Column) bool {
+	if strings.EqualFold(c.ColumnName, other.ColumnName) && c.Type == other.Type {
+		return true
+	} else {
+		return false
+	}
+}
+
 type SqlRouter struct {
 	File_path string
 	Sql       string
@@ -162,4 +208,9 @@ type Context struct {
 	DB              *sql.DB
 	Logger          *logrus.Logger
 	IsDebugLocal    bool
+}
+
+type TempResult struct {
+	Filename   string
+	Table_meta TableMeta
 }
