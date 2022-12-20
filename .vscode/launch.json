@@ -9,8 +9,7 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            // "program": "/home/zqs/DDB_Project/plan/plan_test.go", // "${fileDirname}
-            // "cwd":"/home/zqs/DDB_Project"
+            // "program": "/home/bigdata/DDB_Project/plan/plan_test.go", // "${fileDirname}
             "program":"/home/bigdata/DDB_Project/main/main.go",
             "args": [
                 "-host",

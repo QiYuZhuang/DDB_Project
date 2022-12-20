@@ -28,6 +28,7 @@ const (
 	ProjectionType
 	JoinType
 	UnionType
+	FinalProjectionType
 )
 
 func (s NodeType) String() string {
@@ -42,6 +43,8 @@ func (s NodeType) String() string {
 		return "JoinType"
 	case UnionType:
 		return "UnionType"
+	case FinalProjectionType:
+		return "FinalProjectionType"
 	default:
 		return "Unknown"
 	}
@@ -382,6 +385,7 @@ func PrintPlanTreePlot(p *PlanTreeNode) string {
 			for i := 0; i < nums; i++ {
 				cur_node := v.GetChild(i)
 				if cur_node.IsPruned {
+					fmt.Println("cur_node.IsPruned", cur_node.IsPruned)
 					continue
 				}
 				var cur_val string
@@ -416,7 +420,7 @@ func PrintPlanTreePlot(p *PlanTreeNode) string {
 					}
 				}
 
-				cur_node_graphvis, err := graph.CreateNode(strconv.Itoa(node_id) + "_" + cur_val)
+				cur_node_graphvis, err := graph.CreateNode(strconv.Itoa(node_id) + "_" + cur_val + "_" + strconv.Itoa(cur_node.NodeId) + ":" + strconv.Itoa(cur_node.Status))
 				node_id++
 
 				if err != nil {
@@ -491,7 +495,7 @@ func GetCondition(expr *ast.BinaryOperationExpr) (ColType, ColType,
 	return left, right, left_attr, right_attr, left_val, right_val, nil
 }
 
-func TransExprNode2Str(expr *ast.BinaryOperationExpr, with_table_name bool) string {
+func TransExprNode2Str(expr *ast.BinaryOperationExpr, with_table_name bool, with_quote bool) string {
 	left, right, left_attr, right_attr, _, right_val, _ := GetCondition(expr)
 	var left_str string
 	var right_str string
@@ -499,9 +503,19 @@ func TransExprNode2Str(expr *ast.BinaryOperationExpr, with_table_name bool) stri
 	if left == AttrType && right == ValueType {
 		left_str = left_attr.Name.Name.O
 		if len(right_val.GetDatumString()) > 0 {
-			right_str = "\"" + right_val.GetDatumString() + "\""
+			if with_quote {
+				if !strings.Contains(right_val.GetDatumString(), "\"") && !strings.Contains(right_val.GetDatumString(), "'") {
+					right_str = "\"" + right_val.GetDatumString() + "\""
+				}
+			} else {
+				right_str = right_val.GetDatumString()
+			}
 		} else {
-			right_str = "\"" + strconv.Itoa(int(right_val.GetInt64())) + "\""
+			if with_quote {
+				right_str = "\"" + strconv.Itoa(int(right_val.GetInt64())) + "\""
+			} else {
+				right_str = strconv.Itoa(int(right_val.GetInt64()))
+			}
 		}
 
 	} else if left == AttrType && right == AttrType {
@@ -555,14 +569,22 @@ func ParseAndExecute(ctx meta.Context, sql_str string) (meta.StmtType, *PlanTree
 		// define site1 10.77.110.145:10800, site2 10.77.110.146:10800, site3 10.77.110.148:10800, site4 10.77.110.146:20800;
 	} else if utils.ContainString(sql_str, "PARTITION", true) {
 		sql_str = strings.Replace(sql_str, " ", "", -1)
-		partition_infos, err := HandlePartitionSQL(ctx, sql_str)
-		if err != nil {
-			fmt.Println(err)
-		}
-		if !ctx.IsDebugLocal {
-			err := etcd.SaveFragmenttoEtcd(partition_infos)
+
+		if utils.ContainString(sql_str, "DELETE", true) {
+			err := HandleDeletePartitionSQL(ctx, sql_str)
 			if err != nil {
 				fmt.Println(err)
+			}
+		} else {
+			partition_infos, err := HandleCreatePartitionSQL(ctx, sql_str)
+			if err != nil {
+				fmt.Println(err)
+			}
+			if !ctx.IsDebugLocal {
+				err := etcd.SaveFragmenttoEtcd(partition_infos)
+				if err != nil {
+					fmt.Println(err)
+				}
 			}
 		}
 	} else {
@@ -599,8 +621,7 @@ func ParseAndExecute(ctx meta.Context, sql_str string) (meta.StmtType, *PlanTree
 			sql_type = meta.LoadDataStmtType
 		default:
 			// createdb, dropdb, all broadcast
-			ret, err = BroadcastSQL(ctx, x)
-			sql_type = meta.CreateTableStmtType
+			ret, sql_type, err = BroadcastSQL(ctx, x)
 		}
 	}
 	if err != nil {

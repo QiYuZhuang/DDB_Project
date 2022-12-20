@@ -48,7 +48,7 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 							new_expr_node_.R = &val_attr_node
 
 							conds_ = append(conds_, &new_expr_node_)
-							conds_str = append(conds_str, TransExprNode2Str(&new_expr_node_, false))
+							conds_str = append(conds_str, TransExprNode2Str(&new_expr_node_, false, true))
 						}
 						if cond_.GreaterEqualThan != "" {
 							new_expr_node_ := new_expr_node
@@ -62,7 +62,7 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 							new_expr_node_.R = &val_attr_node
 
 							conds_ = append(conds_, &new_expr_node_)
-							conds_str = append(conds_str, TransExprNode2Str(&new_expr_node_, false))
+							conds_str = append(conds_str, TransExprNode2Str(&new_expr_node_, false, true))
 						}
 					} else {
 						// ==
@@ -78,7 +78,7 @@ func InitFragWithCondition(frag_info meta.Partition, frag_name string) ([]ast.Ex
 						new_expr_node_.R = &val_attr_node
 
 						conds_ = append(conds_, &new_expr_node_)
-						conds_str = append(conds_str, TransExprNode2Str(&new_expr_node_, false))
+						conds_str = append(conds_str, TransExprNode2Str(&new_expr_node_, false, true))
 					}
 				}
 			}
@@ -105,7 +105,7 @@ func GetFilterCondition(frags_ meta.Partition, frag_name string) ([]string, []st
 			if !ok {
 				return condition_str_, col_str_, errors.New("fail to type cast into BinaryOperationExpr")
 			}
-			condition_str_ = append(condition_str_, TransExprNode2Str(expr, false))
+			condition_str_ = append(condition_str_, TransExprNode2Str(expr, false, true)) // ?
 		}
 	}
 	sort.Strings(condition_str_)
@@ -206,7 +206,7 @@ func PushDownPredicates(ctx meta.Context, frag_node *PlanTreeNode, where *PlanTr
 			cur_table_name := strings.ToUpper(left_attr.Name.Table.String())
 			if utils.ContainString(frag_node.FromTableName, cur_table_name, true) {
 				frag_node.Conditions = append(frag_node.Conditions, expr)
-				frag_node.ConditionsStr = append(frag_node.ConditionsStr, TransExprNode2Str(expr, false))
+				frag_node.ConditionsStr = append(frag_node.ConditionsStr, TransExprNode2Str(expr, false, true))
 				fmt.Println("Condition [" + strconv.FormatInt(int64(index_), 10) + "] adds to " + frag_node.FromTableName)
 			}
 
@@ -576,7 +576,7 @@ func AddJoinCondition(join_cond_expr *ast.BinaryOperationExpr, new_join *PlanTre
 						new_cond_.L = join_cond_expr.R
 						new_cond_.R = expr.R
 						ret = append(ret, &new_cond_)
-						conds_str_ = append(conds_str_, TransExprNode2Str(&new_cond_, false))
+						conds_str_ = append(conds_str_, TransExprNode2Str(&new_cond_, false, true))
 					}
 
 					if left_attr_name_ == join_right_attr_name {
@@ -588,7 +588,7 @@ func AddJoinCondition(join_cond_expr *ast.BinaryOperationExpr, new_join *PlanTre
 						new_cond_.L = join_cond_expr.L
 						new_cond_.R = expr.R
 						ret = append(ret, &new_cond_)
-						conds_str_ = append(conds_str_, TransExprNode2Str(&new_cond_, false))
+						conds_str_ = append(conds_str_, TransExprNode2Str(&new_cond_, false, true))
 					}
 				} else {
 					fmt.Println("do not support...")
@@ -764,13 +764,13 @@ func GetJoinSeq(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode, Prune
 				join_table_set = append(join_table_set, r_table)
 
 				var new_condition_array []string
-				new_condition_array = append(new_condition_array, TransExprNode2Str(expr, true))
+				new_condition_array = append(new_condition_array, TransExprNode2Str(expr, true, true))
 				join_condition = append(join_condition, new_condition_array)
 				// join_table_set.Add(l_table)
 				// join_table_set.Add(r_table)
 			} else {
 				// joined already
-				join_condition[idx] = append(join_condition[idx], TransExprNode2Str(expr, true))
+				join_condition[idx] = append(join_condition[idx], TransExprNode2Str(expr, true, true))
 			}
 		}
 	}
@@ -1030,55 +1030,6 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 			}
 		}
 
-		// if s_whole_right.Cardinality() == 1 {
-		// 	// whole right is the same, join together
-		// 	new_union.RemoveAllChild()
-
-		// 	new_union_left := PlanTreeNode{
-		// 		Type:          l_table_node.Type,
-		// 		FromTableName: l_table_node.Type.String(),
-		// 		Conditions:    l_table_node.Conditions,
-		// 		ConditionsStr: l_table_node.ConditionsStr,
-		// 	}.Init()
-		// 	// if l_table_node.
-
-		// 	// l_table_node_nums := 0
-		// 	// var l_frag_node_ptr *PlanTreeNode
-		// 	// l_frag_node_ptr = nil
-		// l_table_node.FromTableName = ""
-		// for i := 0; i < l_table_node.GetChildrenNum(); i++ {
-		// 	// todo error cut empty...
-		// 	cur_l_frag := *l_table_node.GetChild(i)
-		// 	if !cur_l_frag.IsPruned {
-		// 		new_union_left.AddChild(&cur_l_frag)
-		// 		if len(l_table_node.FromTableName) > 0 {
-		// 			l_table_node.FromTableName += "|"
-		// 		}
-		// 		l_table_node.FromTableName += cur_l_frag.FromTableName
-		// 		// l_table_node_nums++
-		// 		// l_frag_node_ptr = &cur_l_frag
-		// 	}
-		// }
-
-		// 	new_union_join := PlanTreeNode{
-		// 		Type:          JoinType,
-		// 		FromTableName: l_table_node.FromTableName + "|" + r_whole_frag_join_.FromTableName,
-		// 		ConditionsStr: join_seq_condition[idx],
-		// 	}.Init()
-
-		// 	// if l_table_node_nums > 1 {
-		// 	// 	new_union_join.AddChild(new_union_left)
-		// 	// } else {
-		// 	// 	if l_frag_node_ptr != nil {
-		// 	// 		new_union_join.AddChild(l_frag_node_ptr)
-		// 	// 	}
-		// 	// }
-		// 	new_union_join.AddChild(new_union_left)
-		// 	new_union_join.AddChild(r_whole_frag_join_)
-
-		// 	new_union.AddChild(new_union_join)
-		// }
-
 		//
 		if index_l > index_r {
 			from.RemoveChild(index_l)
@@ -1211,7 +1162,7 @@ func filterColumns(partition_info PartitionInfo, from *PlanTreeNode) []string {
 		for i_, cur_cond := range from.ColsName {
 			is_in_ := false
 			for _, col := range partition_info.VFrag.ColumnName {
-				if col == cur_cond {
+				if strings.EqualFold(col, cur_cond) {
 					is_in_ = true
 					break
 				}

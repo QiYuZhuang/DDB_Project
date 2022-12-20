@@ -104,7 +104,7 @@ func LocalExecDataLoad(ctx meta.Context, sql string, filepath string) error {
 	return nil
 }
 
-func LocalExecInternalSql(ctx *meta.Context, sql string, filepath string, query_type meta.StmtType) error {
+func LocalExecInternalSql(ctx *meta.Context, sql string, filepath string, query_type meta.StmtType) (int, error) {
 	// file path is used for batch insert
 	l := ctx.Logger
 	// active_trans := c.ActiveTransactions
@@ -113,7 +113,7 @@ func LocalExecInternalSql(ctx *meta.Context, sql string, filepath string, query_
 	err := db.Ping()
 	if err != nil {
 		l.Errorln("db connect failed. err: ", err.Error())
-		return err
+		return 0, err
 	}
 	l.Infoln("local exec sql: ", sql)
 
@@ -121,25 +121,26 @@ func LocalExecInternalSql(ctx *meta.Context, sql string, filepath string, query_
 		err = utils.Chown("mysql", filepath, false)
 		if err != nil {
 			l.Errorln("chown failed, error is ", err.Error())
-			return err
+			return 0, err
 		}
 	}
 
-	_, err = db.Exec(sql)
+	res, err := db.Exec(sql)
 	if err != nil {
 		l.Errorln("local exec failed. err: ", err.Error())
-		return err
+		return 0, err
 	}
 
 	if query_type == meta.LoadDataStmtType {
 		err = utils.RmFile(filepath, false)
 		if err != nil {
 			l.Errorln("delete failed, error is ", err.Error())
-			return err
+			return 0, err
 		}
 	}
+	row_cnt, _ := res.RowsAffected()
 
-	return nil
+	return int(row_cnt), nil
 }
 
 func CreateTempTable(ctx *meta.Context, table_name string, columns []meta.Column) error {

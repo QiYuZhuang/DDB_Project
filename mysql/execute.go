@@ -3,10 +3,12 @@ package mysql
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"os/user"
 	"project/meta"
 	"project/plan"
 	"project/utils"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +37,8 @@ func Exec(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeNode) (st
 func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeNode, internal_results chan meta.TempResult, wg *sync.WaitGroup) error {
 	defer wg.Done()
 	var temp_result meta.TempResult
+	var err error
+
 	temp_result.Filename = ""
 
 	l := ctx.Logger
@@ -55,7 +59,7 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 		raw_table_name := strings.Split(table_name, "_")[0]
 		raw_table_meta, _, _ := plan.FindMetaInfo(*ctx, raw_table_name)
 		u, _ := user.Current()
-		table_meta.TableName = table_name
+		table_meta.TableName = raw_table_name
 		table_meta.IsTemp = true
 
 		is_remote = !(utils.ContainString(ctx.IP, node.ExecuteSiteIP, false) && node.ExecuteSitePort == "10800")
@@ -114,6 +118,7 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 
 			// mv tmp file to tmp path
 			temp_result.Filename = txn.TmpResultInFile[query_id]
+			node.Status = txn.EffectRows[query_id]
 
 			internal_results <- temp_result
 		} else {
@@ -121,7 +126,7 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 			raw_path := "/tmp/data/" + tmp_filename
 			tmp_path := "/home/" + u.Username + "/" + tmp_filename
 			select_sql := utils.GenerateSelectIntoFileSql(strings.Trim(select_sql, ";"), raw_path, "|", "")
-			if err := LocalExecInternalSql(ctx, select_sql, "", meta.SelectIntoFileStmtType); err != nil {
+			if node.Status, err = LocalExecInternalSql(ctx, select_sql, "", meta.SelectIntoFileStmtType); err != nil {
 				internal_results <- temp_result
 				l.Errorln("interal execute failed", err.Error())
 				return err
@@ -160,7 +165,7 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 		inner_wg.Wait()
 		close(inner_channel)
 
-		var file_list []meta.TempResult
+		var file_list meta.TempResultList
 		for c := range inner_channel {
 			file_list = append(file_list, c)
 		}
@@ -186,15 +191,55 @@ func execPlanNode(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeN
 			}
 			internal_results <- file_list[0]
 		}
+		// else if node.Type == plan.FinalProjectionType {
+		// 	//
+		// 	interal_result, err := handleProjectionOperation(ctx, txn, node, file_list)
+		// 	if err != nil {
+		// 		l.Errorln("handle join operation failed", err)
+		// 		return err
+		// 	}
+		// 	internal_results <- interal_result
+		// }
 	}
 	return nil
 }
 
-func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeNode, file_list []meta.TempResult) (meta.TempResult, error) {
+func handleProjectionOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeNode, file_list meta.TempResultList) (meta.TempResult, error) {
 	var (
-		ret              meta.TempResult
-		table_names      []string
-		filepath         string
+		ret meta.TempResult
+		// table_names []string
+		// filepath         string
+		// final_meta       meta.TableMeta
+		// final_conditions []string
+		// temp_table_map   map[int]string
+		err error
+	)
+	l := ctx.Logger
+
+	// u, _ := user.Current()
+
+	if len(file_list) != 1 {
+		l.Errorln("len(file_list) != 1")
+		return ret, errors.New("len(file_list) != 1")
+	}
+
+	table_meta := file_list[0].Table_meta
+	ret.Table_meta = table_meta
+
+	// create tmp table
+	tmp_table_name := "INTER_TMP_" + strconv.Itoa(node.NodeId) + "_" + strconv.Itoa(int(time.Now().Unix()))
+	if err = createTmpTable(tmp_table_name, table_meta, ctx.DB, true); err != nil {
+		return ret, err
+	}
+
+	return ret, err
+}
+
+func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeNode, file_list meta.TempResultList) (meta.TempResult, error) {
+	var (
+		ret         meta.TempResult
+		table_names []string
+		// filepath         string
 		final_meta       meta.TableMeta
 		final_conditions []string
 		temp_table_map   map[int]string
@@ -205,6 +250,8 @@ func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.Pl
 	l := ctx.Logger
 	conditions := parseCondition(node.ConditionsStr)
 	u, _ := user.Current()
+
+	sort.Sort(meta.TempResultList(file_list))
 
 	for i := 0; i < len(file_list); i++ {
 		tmp_table_name := "INTER_TMP_" + strconv.Itoa(int(txn.TxnId)) + "_" + strconv.Itoa(node.NodeId) + "_" + strconv.Itoa(i)
@@ -225,7 +272,7 @@ func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.Pl
 
 		filepath := "/home/" + u.Username + "/" + filename
 		dst_path := "/tmp/data/" + filename
-		if err := utils.MvFile(filepath, dst_path, false); err != nil {
+		if err := utils.CpFile(filepath, dst_path, false); err != nil {
 			dropTmpTable(tmp_table_name, ctx.DB)
 			return ret, err
 		}
@@ -250,6 +297,12 @@ func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.Pl
 	}
 
 	// rewrite conditions
+
+	var is_used_ []bool
+	for i := 0; i < len(file_list); i++ {
+		is_used_ = append(is_used_, false)
+	}
+
 	for i := 0; i < len(conditions); i++ {
 		lrewrite_ok, rrewrite_ok := false, false
 		l_idx, r_idx, rf_idx := -1, -1, -1
@@ -257,17 +310,21 @@ func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.Pl
 		need_compress := conditions[i].NeedCompress()
 		for j := 0; j < len(file_list); j++ {
 			l_idx = findColumn(file_list[j].Table_meta, l_tname, l_cname)
-			if l_idx != -1 {
+			if l_idx != -1 && !is_used_[j] {
 				lrewrite_ok = true
+				is_used_[j] = true
 				conditions[i].SetConditionField(true, temp_table_map[j], file_list[j].Table_meta.Columns[l_idx].ColumnName)
+				break
 			}
 		}
 		for j := 0; j < len(file_list); j++ {
 			r_idx = findColumn(file_list[j].Table_meta, r_tname, r_cname)
-			if r_idx != -1 {
+			if r_idx != -1 && !is_used_[j] {
 				rf_idx = j
 				rrewrite_ok = true
+				is_used_[j] = true
 				conditions[i].SetConditionField(false, temp_table_map[j], file_list[j].Table_meta.Columns[r_idx].ColumnName)
+				break
 			}
 		}
 
@@ -280,6 +337,14 @@ func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.Pl
 			l.Errorln("can not find columns")
 			return ret, errors.New("rewrite failed")
 		}
+	}
+	//
+	for _, file_ := range file_list {
+		final_meta.Columns = append(final_meta.Columns, file_.Table_meta.Columns...)
+		if len(final_meta.TableName) > 0 {
+			final_meta.TableName += "$"
+		}
+		final_meta.TableName += file_.Table_meta.TableName
 	}
 
 	join_sql := generateJoinSql(file_list, table_names, final_conditions)
@@ -308,13 +373,13 @@ func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.Pl
 		return ret, err
 	}
 
-	ret.Filename = filepath
+	ret.Filename = tmp_filename
 	ret.Table_meta = final_meta
 
 	return ret, nil
 }
 
-func generateJoinSql(file_list []meta.TempResult, table_list []string, conds []string) string {
+func generateJoinSql(file_list meta.TempResultList, table_list []string, conds []string) string {
 	select_sql := "SELECT"
 	attrs := " "
 	table_refs := " "
@@ -377,7 +442,7 @@ func findColumn(table_meta meta.TableMeta, table_name string, column_name string
 	return -1
 }
 
-func handleUnionOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeNode, file_list []meta.TempResult) (meta.TempResult, error) {
+func handleUnionOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.PlanTreeNode, file_list meta.TempResultList) (meta.TempResult, error) {
 	var (
 		err error
 		ret meta.TempResult
@@ -410,7 +475,7 @@ func handleUnionOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.P
 
 		filepath := "/home/" + u.Username + "/" + filename
 		dst_path := "/tmp/data/" + filename
-		if err = utils.MvFile(filepath, dst_path, false); err != nil {
+		if err = utils.CpFile(filepath, dst_path, false); err != nil {
 			dropTmpTable(tmp_table_name, ctx.DB)
 			return ret, err
 		}
@@ -483,18 +548,27 @@ func createTmpTable(table_name string, table_meta meta.TableMeta, db *sql.DB, sa
 
 	create_sql += table_fields
 	_, err := db.Exec(create_sql)
+	if err != nil {
+		fmt.Println(err, create_sql)
+	}
 	return err
 }
 
 func dropTmpTable(table_name string, db *sql.DB) error {
 	drop_sql := "DROP TABLE " + table_name + ";"
 	_, err := db.Exec(drop_sql)
+	if err != nil {
+		fmt.Println(err, drop_sql)
+	}
 	return err
 }
 
 func insertIntoTable(filepath string, table_name string, db *sql.DB) error {
 	load_data_sql := utils.GenerateDataLoaderSql2(filepath, table_name)
 	_, err := db.Exec(load_data_sql)
+	if err != nil {
+		fmt.Println(err, load_data_sql)
+	}
 	return err
 }
 
@@ -527,11 +601,17 @@ func selectIntoFile(node *plan.PlanTreeNode, filepath string, table_name string,
 
 	select_sql = select_sql + attributes + references + predicates
 	select_sql = utils.GenerateSelectIntoFileSql(select_sql, filepath, "|", "")
-	_, err := db.Exec(select_sql)
+	res, err := db.Exec(select_sql)
+	if err != nil {
+		fmt.Println(err, select_sql)
+	}
+	row_cnt, _ := res.RowsAffected()
+	node.Status = int(row_cnt)
+
 	return err
 }
 
-func checkUnionSchema(table_list []meta.TempResult) (bool, meta.TableMeta) {
+func checkUnionSchema(table_list meta.TempResultList) (bool, meta.TableMeta) {
 	var failed_res meta.TableMeta
 
 	if len(table_list) == 0 {
@@ -576,13 +656,14 @@ func (c *condition) SetConditionStr(str string) {
 }
 
 func (c condition) GetConditionStr() string {
-	return c.left_table_name + "_" + c.left_column_name + "=" + c.right_table_name + "_" + c.right_column_name
+	return c.left_table_name + "." + c.left_column_name + "=" + c.right_table_name + "." + c.right_column_name
 }
 
 func (c *condition) NeedCompress() bool {
 	// 前提是等值连接
-	if utils.ContainString(c.left_column_name, c.right_table_name+"_"+c.right_column_name, true) ||
-		utils.ContainString(c.right_column_name, c.left_table_name+"_"+c.left_column_name, true) {
+	if utils.ContainString(c.left_table_name+"_"+c.left_column_name, c.right_table_name+"_"+c.right_column_name, true) {
+		// utils.ContainString(c.left_column_name, c.right_table_name+"_"+c.right_column_name, true) ||
+		// utils.ContainString(c.right_column_name, c.left_table_name+"_"+c.left_column_name, true) {
 		c.Compress = true
 		return true
 	}

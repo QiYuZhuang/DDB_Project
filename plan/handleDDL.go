@@ -56,7 +56,7 @@ func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, e
 	}
 
 	var table_meta meta.TableMeta
-	table_meta.TableName = tablename
+	table_meta.TableName = strings.ToUpper(tablename)
 	// type TableMeta struct {
 	// 	TableName string   `json:"table_name"`
 	// 	Columns   []Column `json:"columns"`
@@ -87,10 +87,11 @@ func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, e
 
 	} else {
 		// vertical fragment
+		unique_colnum := make(map[string]bool)
 		for frag_index_, frag_ := range partition_meta.VFragInfos {
 			var per meta.SqlRouter
 			var col_sql_str string
-
+			//
 			covered_frag_col := 0
 			for _, create_col := range create_cols {
 				// find col_ in current fragment
@@ -98,18 +99,21 @@ func HandleCreateTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, e
 				for _, col_ := range frag_.ColumnName {
 					if utils.ContainString(create_col, col_, true) {
 						is_find_ = true
+						covered_frag_col += 1
+
+						if len(col_sql_str) > 0 {
+							col_sql_str += ", "
+						}
+						col_sql_str += create_col
 						break
 					}
 				}
-				//
-				if is_find_ {
+				// check is replicated
+				_, ok := unique_colnum[create_col]
 
-					covered_frag_col += 1
-					if len(col_sql_str) > 0 {
-						col_sql_str += ", "
-					}
-					col_sql_str += create_col
-
+				if is_find_ && !ok {
+					// used
+					unique_colnum[create_col] = true
 					new_col, err := new_col_(create_col)
 					if err != nil {
 						return ret, err
@@ -192,16 +196,29 @@ func HandleDropTable(ctx meta.Context, stmt ast.StmtNode) ([]meta.SqlRouter, err
 	return ret, err
 }
 
-func HandlePartitionSQL(ctx meta.Context, sql_str string) (meta.Partition, error) {
+func HandleDeletePartitionSQL(ctx meta.Context, sql_str string) error {
+	if !strings.Contains(sql_str, "|") {
+		return errors.New("invalid sql, please use \" delete partition |customer|;\"")
+	}
+	table_name := utils.GetMidStr(sql_str, "|", "|")
+	err := etcd.DropPartitionfromEtcd(strings.ToUpper(table_name))
+	return err
+}
+
+func HandleCreatePartitionSQL(ctx meta.Context, sql_str string) (meta.Partition, error) {
 	// type Partition struct {
 	// 	TableName  string      `json:"table_name"`
 	// 	SiteInfos  []SiteInfo  `json:"site_info"`
 	// 	HFragInfos []HFragInfo `json:"horizontal_fragmentation"`
 	// 	VFragInfos []VFragInfo `json:"vertical_fragmentation"`
 	// }
+
+	// `create partition on |ORDERS| [horizontal] at (10.77.110.145:10800, 10.77.110.146:10800, 10.77.110.146:10880, 10.77.110.148:10800) where { "ORDERS_1" : CUSTOMER_ID < 307000 and BOOK_ID < 215000; "ORDERS_2" : CUSTOMER_ID < 307000 and BOOK_ID >= 215000; "ORDERS_3" : CUSTOMER_ID >= 307000 and BOOK_ID < 215000; "ORDERS_4" : CUSTOMER_ID >= 307000 and BOOK_ID >= 215000 };`,
 	var partition meta.Partition
 	var frag_type meta.PartitionStrategy
 	var err error
+
+	sql_str = strings.ToUpper(sql_str)
 
 	partition.TableName = utils.GetMidStr(sql_str, "|", "|")
 
@@ -225,7 +242,9 @@ func HandlePartitionSQL(ctx meta.Context, sql_str string) (meta.Partition, error
 
 	for index_ := range site_ips {
 		var site_info meta.SiteInfo
-		site_info.IP = site_ips[index_]
+		ip_and_port := strings.Split(site_ips[index_], ":")
+		site_info.IP = strings.Replace(ip_and_port[0], " ", "", -1)
+		site_info.Port = strings.Replace(ip_and_port[1], " ", "", -1)
 
 		site_detail := strings.Split(site_details[index_], ":")
 		// TODO:
@@ -251,9 +270,12 @@ func HandlePartitionSQL(ctx meta.Context, sql_str string) (meta.Partition, error
 		//
 		for index_ := range site_ips {
 			var cur_frag meta.HFragInfo
+
+			colname_condition_map := make(map[string]meta.ConditionRange)
+
 			cur_frag.FragName = site_names[index_]
 			// for _, cond_ := range site_conds {
-			cond_ := site_conds[index_]
+			cond_ := strings.ToUpper(site_conds[index_])
 			// type ConditionRange struct {
 			// 	ColName          string `json:"col_name"`
 			// 	GreaterEqualThan string `json:"get"`
@@ -275,24 +297,48 @@ func HandlePartitionSQL(ctx meta.Context, sql_str string) (meta.Partition, error
 					break
 				} else if strings.Contains(logi_, ">=") {
 					attr_and_value = strings.Split(logi_, ">=")
-					new_cond.GreaterEqualThan = strings.Trim(attr_and_value[1], " ")
+					new_cond.GreaterEqualThan = strings.Replace(attr_and_value[1], " ", "", -1)
+					new_cond.GreaterEqualThan = strings.Replace(attr_and_value[1], "'", "", -1)
+
 				} else if strings.Contains(logi_, "=") {
 					attr_and_value = strings.Split(logi_, "=")
-					new_cond.Equal = strings.Trim(attr_and_value[1], " ")
+					new_cond.Equal = strings.Replace(attr_and_value[1], " ", "", -1)
+					new_cond.Equal = strings.Replace(attr_and_value[1], "'", "", -1)
 				} else if strings.Contains(logi_, ">") {
 					// attr_and_value = strings.Split(logi_, ">")
 					err = errors.New("not support")
 					break
 				} else if strings.Contains(logi_, "<") {
 					attr_and_value = strings.Split(logi_, "<")
-					new_cond.LessThan = strings.Trim(attr_and_value[1], " ")
+					new_cond.LessThan = strings.Replace(attr_and_value[1], " ", "", -1)
+					new_cond.LessThan = strings.Replace(attr_and_value[1], "'", "", -1)
 				} else {
 					err = errors.New("Dont exist operation in condition " + logi_)
 					break
 				}
-				new_cond.ColName = strings.Trim(attr_and_value[0], " ")
-				cur_frag.Conditions = append(cur_frag.Conditions, new_cond)
+				new_cond.ColName = strings.Replace(attr_and_value[0], " ", "", -1)
+
+				//
+				if entry, ok := colname_condition_map[new_cond.ColName]; ok {
+					if len(new_cond.GreaterEqualThan) > 0 {
+						entry.GreaterEqualThan = new_cond.GreaterEqualThan
+					}
+					if len(new_cond.Equal) > 0 {
+						entry.Equal = new_cond.Equal
+					}
+					if len(new_cond.LessThan) > 0 {
+						entry.LessThan = new_cond.LessThan
+					}
+					colname_condition_map[new_cond.ColName] = entry
+				} else {
+					colname_condition_map[new_cond.ColName] = new_cond
+				}
 			}
+
+			for _, cond_ := range colname_condition_map {
+				cur_frag.Conditions = append(cur_frag.Conditions, cond_)
+			}
+
 			partition.HFragInfos = append(partition.HFragInfos, cur_frag)
 			// }
 

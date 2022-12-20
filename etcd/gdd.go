@@ -2,6 +2,7 @@ package etcd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"project/meta"
@@ -276,7 +277,7 @@ func SaveFragmenttoEtcd(partition meta.Partition) error {
 
 		for i := 0; i < len(partition.SiteInfos); i++ {
 			k5 := k1 + "/" + partition.SiteInfos[i].FragName + "/ip"
-			v5 := partition.SiteInfos[i].IP
+			v5 := partition.SiteInfos[i].IP + ":" + partition.SiteInfos[i].Port
 
 			PutKey(k5, v5)
 		}
@@ -288,7 +289,7 @@ func SaveFragmenttoEtcd(partition meta.Partition) error {
 		//写入基本分片信息 name:fragmenttype
 		PutKey(k1, v1)
 
-		k2 := k1 + "VERTICAL"
+		k2 := k1 + "/VERTICAL"
 		v2 := ""
 		for i := 0; i < len(partition.VFragInfos); i++ {
 			v2 += partition.VFragInfos[i].FragName
@@ -308,7 +309,7 @@ func SaveFragmenttoEtcd(partition meta.Partition) error {
 				v3 += ","
 			}
 			v3 = v3[:len(v3)-1]
-			v4 := partition.SiteInfos[i].IP
+			v4 := partition.SiteInfos[i].IP + ":" + partition.SiteInfos[i].Port
 
 			PutKey(k3, v3)
 			PutKey(k4, v4)
@@ -439,6 +440,9 @@ func GetFragmentSite(tablename string) ([]meta.SiteInfo, error) {
 	var res []meta.SiteInfo
 	for i := 0; i < len(sitenameslist); i++ {
 		sitename := sitenameslist[i]
+		if len(sitename) == 0 {
+			continue
+		}
 		key1 := "/patitions/" + tablename + "/" + sitename + "/ip"
 		ipget, err := GetKey(key1)
 		if err != nil {
@@ -447,9 +451,12 @@ func GetFragmentSite(tablename string) ([]meta.SiteInfo, error) {
 			return s, err
 		}
 
+		ip_and_port := strings.Split(bytetoString(ipget), ":")
+
 		siteinfo := meta.SiteInfo{
 			FragName: sitename,
-			IP:       bytetoString(ipget),
+			IP:       strings.Replace(ip_and_port[0], " ", "", -1),
+			Port:     strings.Replace(ip_and_port[1], " ", "", -1),
 		}
 		res = append(res, siteinfo)
 	}
@@ -590,7 +597,10 @@ func GetPartitions(tablenames []string) (meta.Partitions, error) {
 	var res meta.Partitions
 	for i := 0; i < len(tablenames); i++ {
 		tablename := tablenames[i]
-
+		if len(tablename) == 0 {
+			continue
+		}
+		tablename = strings.ToUpper(tablename)
 		partition, err := GetPartition(tablename)
 		if err != nil {
 			fmt.Println("get partitions error")
@@ -604,6 +614,7 @@ func GetPartitions(tablenames []string) (meta.Partitions, error) {
 
 func GetPartition(tablename string) (meta.Partition, error) {
 	var res meta.Partition
+	tablename = strings.ToUpper(tablename)
 	siteinfos, err := GetFragmentSite(tablename)
 	if err != nil {
 		fmt.Println("get partition error")
@@ -652,7 +663,52 @@ func GetPartition(tablename string) (meta.Partition, error) {
 	}
 }
 
+func DropPartitionfromEtcd(tablename string) error {
+	tablename = strings.ToUpper(tablename)
+	exist_tables, err := GetPartitionTablenames()
+	if err != nil {
+		fmt.Println("drop partition from etcd failed")
+		return err
+	}
+
+	k1 := "/patition_tablenames"
+	v1 := ""
+	for i := 0; i < len(exist_tables); i++ {
+		if len(v1) > 0 {
+			v1 += ","
+		}
+		if exist_tables[i] != tablename {
+			v1 += exist_tables[i]
+		}
+	}
+
+	PutKey(k1, v1)
+	fragmenttype, err := GetFragmentType(tablename)
+	if err != nil {
+		fmt.Println("drop partition from etcd failed")
+		return err
+	}
+
+	k2 := "/patitions/" + tablename
+	err = DeletevalwithPrefix(k2)
+
+	if err != nil {
+		fmt.Println("drop partition meta from etcd error")
+		return err
+	}
+
+	k3 := "/patitions/" + tablename + "/" + fragmenttype
+	err = DeletevalwithPrefix(k3)
+
+	if err != nil {
+		fmt.Println("drop partition meta from etcd error")
+		return err
+	}
+	return nil
+}
+
 func DropTablefromEtcd(tablename string, is_temp bool) error {
+	tablename = strings.ToUpper(tablename)
 	exist_tables, err := GetTables(is_temp)
 	if err != nil {
 		fmt.Println("drop table from etcd failed")
@@ -701,4 +757,46 @@ func RefreshContext(ctx *meta.Context) error {
 		return err
 	}
 	return err
+}
+
+func ShowPartitions() (string, error) {
+	var err error
+	var ret string
+
+	table_names, err := GetPartitionTablenames()
+	if err != nil {
+		return ret, err
+	}
+	// table_metas, err := getTableMetas()
+	// if err != nil {
+	// 	return err
+	// }
+	table_partitions, err := GetPartitions(table_names)
+	if err != nil {
+		return ret, err
+	}
+	new_line_ := "=============================================\n"
+
+	for _, partition_ := range table_partitions.Partitions {
+		ret += new_line_
+		if len(partition_.TableName) == 0 {
+			continue
+		}
+		// ret += "\"TableName:\"" + partition_.TableName + "\n"
+		str_, _ := json.Marshal(partition_)
+		ret += string(str_) + "\n"
+
+		// if partition_.FragType == meta.Horizontal {
+		// 	str_, _ := json.Marshal(partition_.HFragInfos, "", "	")
+		// 	ret += string(str_) + "\n"
+		// } else {
+		// 	str_, _ := json.Marshal(partition_.VFragInfos, "", "	")
+		// 	ret += string(str_) + "\n"
+		// }
+	}
+
+	ret = strings.Replace(ret, "\\u003c", "<", -1)
+	ret = strings.Replace(ret, "\\u003e", ">", -1)
+
+	return ret, err
 }

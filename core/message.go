@@ -5,7 +5,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"project/meta"
-	"project/mysql"
 	"project/utils"
 	"strconv"
 	"strings"
@@ -66,30 +65,30 @@ func QueryRequestHandler(m meta.Message, c *Coordinator) error {
 	resp := meta.NewMessage(meta.QueryResponse, m.Dst, m.DstPort, m.Src, m.SrcPort, m.TxnId)
 	resp.SetQueryId(m.QueryId)
 	if utils.ContainString(m.Query, "SELECT", true) {
-		rows, err := db.Query(m.Query)
-		if err != nil {
-			l.Errorln("exec failed", err)
-		}
+		// rows, err := db.Query(m.Query)
+		// if err != nil {
+		// 	l.Errorln("exec failed", err)
+		// }
 
-		row_cnt := mysql.ParseRows(rows)
-		// resp.SetQueryResult(result)
-		resp.SetRowCnt(row_cnt)
+		// row_cnt := mysql.ParseRows(rows)
+		// // resp.SetQueryResult(result)
 
 		// select into tmp file
 		tmp_filename := "INTER_TMP_" + strconv.FormatInt(int64(m.TxnId), 10) + "_" + strconv.FormatInt(int64(m.QueryId), 10) + ".csv"
 		tmp_path := "/tmp/data/" + tmp_filename
 		tmp_sql := utils.GenerateSelectIntoFileSql(strings.Trim(m.Query, ";"), tmp_path, "|", "")
-		_, err = db.Exec(tmp_sql)
+		res, err := db.Exec(tmp_sql)
 		if err != nil {
 			l.Errorln("select into file failed. err: ", err.Error())
 		}
+		row_cnt, _ := res.RowsAffected()
 
 		dst_path := "/home/" + u.Username
 		err = chownScpRemove(u.Username, tmp_path, dst_path, m.Src)
 		if err != nil {
 			l.Errorln("chown - scp - rm failed, error is", err.Error())
 		}
-
+		resp.SetRowCnt(int(row_cnt))
 		resp.SetFilepath(dst_path)
 		resp.SetFilename(tmp_filename)
 	} else {

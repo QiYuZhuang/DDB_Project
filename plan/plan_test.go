@@ -9,6 +9,7 @@ import (
 
 	cfg "project/config"
 	core "project/core"
+	"project/etcd"
 	"project/meta"
 	mysql "project/mysql"
 	plan "project/plan"
@@ -207,7 +208,7 @@ import (
 
 func TestParseDebugLocal(t *testing.T) {
 	// read partion meta info
-	jsonFileDir := "/home/zqs/DDB_Project/config/partition.json"
+	jsonFileDir := "/home/bigdata/DDB_Project/config/partition.json"
 	jsonFile, err := os.Open(jsonFileDir)
 	if err != nil {
 		fmt.Println(err)
@@ -221,7 +222,7 @@ func TestParseDebugLocal(t *testing.T) {
 	////
 
 	// read table meta info
-	jsonFileDir = "/home/zqs/DDB_Project/config/table_meta.json"
+	jsonFileDir = "/home/bigdata/DDB_Project/config/table_meta.json"
 	jsonFile, err = os.Open(jsonFileDir)
 	if err != nil {
 		fmt.Println(err)
@@ -256,8 +257,12 @@ func TestParseDebugLocal(t *testing.T) {
 		IsDebugLocal:    true,
 	}
 
-	a, b, _ := plan.GetFilterCondition(ctx.TablePartitions.Partitions[1], "CUSTOMER_1")
-	fmt.Println(a, b)
+	if !ctx.IsDebugLocal {
+		etcd.Connect_etcd() //连接etcd客户端
+	}
+
+	// a, b, _ := plan.GetFilterCondition(ctx.TablePartitions.Partitions[1], "CUSTOMER_1")
+	// fmt.Println(a, b)
 
 	// parser and hanlder insert and select
 	// sql_str := "insert into publisher values(200000, 'hello world');"
@@ -269,8 +274,7 @@ func TestParseDebugLocal(t *testing.T) {
 	// stmt, _ := my_parser.ParseOneStmt("select test.a, test2.b from test, test2 where test.a >= 2 and test2.b < 30;", "", "")
 
 	sql_strs := []string{
-		// "create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
-		"create table customer (ID int, NAME varchar(255), RANK_ int);",
+
 		// "insert into publisher values(103999, 'zzq', 'PRC');",
 		// "insert into publisher values(103999, 'zzq2', 'USA');",
 		// "insert into publisher values(104000, 'aa1', 'PRC');",
@@ -278,16 +282,28 @@ func TestParseDebugLocal(t *testing.T) {
 		// "insert into customer values(20000, 'hello world', 2);",
 		// "insert into customer values(20000, 'hello world', 2);",
 		// "drop table customer;",
-		// `create partition on |PUBLISHER| [horizontal] \
-		// 	at (10.77.110.145, 10.77.110.146, 10.77.110.145, 10.77.110.146) \
-		// 	where { \
-		// 	 "PUBLISHER_1" : ID < 104000 and NATION = 'PRC'; \
-		// 	 "PUBLISHER_2" : ID < 104000 and NATION = 'USA'; \
-		// 	 "PUBLISHER_3" : ID >= 104000 and NATION = 'PRC'; \
-		// 	 "PUBLISHER_4" : ID >= 104000 and NATION = 'USA' \
-		// 	};`,
+
+		// test
+		"create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
+		"create table customer (ID int, NAME varchar(255), RANK_ int);",
+		"create table orders (customer_id int, book_id int, quantity int);",
+		"create table book (id int , title char(100), authors char(200), publisher_id int, copies int);",
+
+		"insert into customer(id, name, rank_) values(300001, 'Xiaoming', 1);",
+		"insert into publisher(id, name, nation) values(104001,'High Education Press', 'PRC');",
+
+		// test
+		`create partition on |PUBLISHER| [horizontal] at (10.77.110.145:10800, 10.77.110.146:10800, 10.77.110.146:10880, 10.77.110.148:10800) where { "PUBLISHER_1" : ID < 104000 and NATION = 'PRC'; "PUBLISHER_2" : ID < 104000 and NATION = 'USA'; "PUBLISHER_3" : ID >= 104000 and NATION = 'PRC'; "PUBLISHER_4" : ID >= 104000 and NATION = 'USA' };`,
+		`create partition on |CUSTOMER| [vertical] at (10.77.110.145:10800, 10.77.110.146:10800) where { "CUSTOMER_1" : ID, NAME; "CUSTOMER_2" : ID, rank_};`,
+
+		`create partition on |ORDERS| [horizontal] at (10.77.110.145:10800, 10.77.110.146:10800, 10.77.110.146:10880, 10.77.110.148:10800) where { "ORDERS_1" : CUSTOMER_ID < 307000 and BOOK_ID < 215000; "ORDERS_2" : CUSTOMER_ID < 307000 and BOOK_ID >= 215000; "ORDERS_3" : CUSTOMER_ID >= 307000 and BOOK_ID < 215000; "ORDERS_4" : CUSTOMER_ID >= 307000 and BOOK_ID >= 215000 };`,
+		`create partition on |BOOK| [horizontal] at (10.77.110.145:10800, 10.77.110.146:10800, 10.77.110.146:10880) where { "BOOK_1" : ID < 205000; "BOOK_2" : ID >= 205000 and ID < 210000 ; "BOOK_3" : ID >= 210000 };`,
+
 		"LOAD DATA INFILE '/tmp/data/publisher.csv' INTO TABLE publisher FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (ID, NAME, NATION);",
-		// "LOAD DATA INFILE '/tmp/data/customer.csv' INTO TABLE customer FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\r\n' (ID, NAME, _RANK);",
+		"LOAD DATA INFILE '/tmp/data/customer.csv' INTO TABLE customer FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (ID, NAME, RANK_);",
+		"LOAD DATA INFILE '/tmp/data/order.csv' INTO TABLE orders FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (customer_id, book_id, quantity);",
+		"LOAD DATA INFILE '/tmp/data/book.csv' INTO TABLE book FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (id, title, authors, publisher_id, copies);",
+
 		// "create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
 		// `create partition on |CUSTOMER| [vertical]
 		// 	at (10.77.110.145, 10.77.110.146)
@@ -335,19 +351,19 @@ func TestParseDebugLocal(t *testing.T) {
 		// `select Book.title,Book.copies,  Publisher.name,Publisher.nation from Book,Publisher where Book.publisher_id=Publisher.id and Publisher.nation='USA' and Book.copies > 1000`,
 
 		// 6
-		// `select Customer.name,Orders.quantity from Customer,Orders where Customer.id=Orders.customer_id`,
+		// `select customer.name,orders.quantity from customer,orders where customer.id=orders.customer_id`,
 
 		// 7
 		// `select Customer.name,Customer.rank_, Orders.quantity from Customer,Orders where Customer.id=Orders.customer_id and Customer.rank_=1`, // not best
 
 		// 8
-		// `select Customer.name ,Orders.quantity, Book.title from Customer,Orders,Book where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Customer.rank_=1 and Book.copies>5000`, // not best
+		// `select Customer.name ,Orders.quantity, Book.title from Customer,Orders,Book where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Customer.rank_=1 and Book.copies>5000`, // not best wrong
 
 		// 9
 		// ` select Customer.name, Book.title, Publisher.name, Orders.quantity from Customer, Book, Publisher, Orders where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Book.publisher_id=Publisher.id and Book.id>220000 and Publisher.nation='USA' and Orders.quantity>1`, // not best
 
 		// 10
-		// `select Customer.name, Book.title,Publisher.name, Orders.quantity from Customer, Book, Publisher, Orders where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Book.publisher_id=Publisher.id and Customer.id>308000 and Book.copies>100 and Orders.quantity>1 and Publisher.nation='PRC';`,
+		`select Customer.name, Book.title,Publisher.name, Orders.quantity from Customer, Book, Publisher, Orders where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Book.publisher_id=Publisher.id and Customer.id>308000 and Book.copies>100 and Orders.quantity>1 and Publisher.nation='PRC';`,
 	}
 
 	for _, sql_str := range sql_strs {

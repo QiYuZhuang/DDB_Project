@@ -11,8 +11,9 @@ const (
 )
 
 type BackToClient struct {
-	Error    string        `json:"error"`
-	Filepath string        `json:"filepath"`
-	Filename string        `json:"filename"`
-	ExecTime time.Duration `json:"exec_time"`
+	Error       string        `json:"error"`
+	Filepath    string        `json:"filepath"`
+	Filename    string        `json:"filename"`
+	ResponseStr string        `json:"response_str"`
+	ExecTime    time.Duration `json:"exec_time"`
 }

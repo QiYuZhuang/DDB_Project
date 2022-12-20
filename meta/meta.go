@@ -2,7 +2,9 @@ package meta
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"project/utils"
 	"strconv"
 	"strings"
@@ -31,12 +33,34 @@ type Partitions struct {
 	Partitions []Partition `json:"patitions"`
 }
 
+func (p Partitions) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.Partitions)
+}
+
 type Partition struct {
 	TableName  string            `json:"table_name"`
 	SiteInfos  []SiteInfo        `json:"site_info"`
 	FragType   PartitionStrategy `json:"fragmentation_type"`
 	HFragInfos []HFragInfo       `json:"horizontal_fragmentation"`
 	VFragInfos []VFragInfo       `json:"vertical_fragmentation"`
+}
+
+func (p Partition) MarshalJSON() ([]byte, error) {
+	if p.FragType == Horizontal {
+		return json.Marshal(map[string]interface{}{
+			"TableName":  p.TableName,
+			"FragType":   "Horizontal",
+			"SiteInfos":  p.SiteInfos,
+			"HFragInfos": p.HFragInfos,
+		})
+	} else {
+		return json.Marshal(map[string]interface{}{
+			"TableName":  p.TableName,
+			"FragType":   "Vertical",
+			"SiteInfos":  p.SiteInfos,
+			"HFragInfos": p.VFragInfos,
+		})
+	}
 }
 
 type SiteInfo struct {
@@ -46,9 +70,25 @@ type SiteInfo struct {
 	Port     string `json:"port"`
 }
 
+func (s SiteInfo) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]interface{}{
+		// "SiteName": s.SiteName,
+		"FragName": s.FragName,
+		"IP":       s.IP,
+		"Port":     s.Port,
+	})
+}
+
 type HFragInfo struct {
 	FragName   string           `json:"frag_name"`
 	Conditions []ConditionRange `json:"range"`
+}
+
+func (h HFragInfo) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]interface{}{
+		"Conditions": h.Conditions,
+		"FragName":   h.FragName,
+	})
 }
 
 // func (h HFragInfo) GetPartAttributes() string {
@@ -66,9 +106,33 @@ type ConditionRange struct {
 	Equal            string `json:"eq"`
 }
 
+func (c ConditionRange) MarshalJSON() ([]byte, error) {
+	var val string
+	if len(c.GreaterEqualThan) > 0 {
+		val += c.ColName + " >= " + c.GreaterEqualThan + " "
+	}
+	if len(c.LessThan) > 0 {
+		val += c.ColName + " < " + c.LessThan + " "
+	}
+	if len(c.Equal) > 0 {
+		val += c.ColName + " = " + c.Equal + " "
+	}
+	return json.Marshal(map[string]interface{}{
+		"Contition": val,
+	})
+}
+
 type VFragInfo struct {
 	FragName   string   `json:"frag_name"`
 	ColumnName []string `json:"col_names"`
+}
+
+func (v VFragInfo) MarshalJSON() ([]byte, error) {
+	fmt.Println(v)
+	return json.Marshal(map[string]interface{}{
+		"FragName": v.FragName,
+		"Columns":  v.ColumnName,
+	})
 }
 
 // func (h VFragInfo) GetPartAttributes() string {
@@ -213,4 +277,18 @@ type Context struct {
 type TempResult struct {
 	Filename   string
 	Table_meta TableMeta
+}
+
+type TempResultList []TempResult
+
+func (e TempResultList) Len() int {
+	return len(e)
+}
+
+func (e TempResultList) Less(i, j int) bool {
+	return e[i].Table_meta.TableName > e[j].Table_meta.TableName
+}
+
+func (e TempResultList) Swap(i, j int) {
+	e[i], e[j] = e[j], e[i]
 }

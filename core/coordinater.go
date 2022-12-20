@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/user"
 	cfg "project/config"
+	"project/etcd"
 	"project/meta"
 	"project/mysql"
 	"project/plan"
@@ -174,76 +175,96 @@ func (c *Coordinator) process(sql string) meta.BackToClient {
 		Port:            c.Context.ServerPort,
 		DB:              c.Context.DB,
 		Logger:          c.Context.Logger,
-		IsDebugLocal:    true,
+		// IsDebugLocal:    true,
 	}
-	sql_type, plan_tree, sqls, err := plan.ParseAndExecute(ctx, sql)
-	if err != nil {
-		l.Errorln(err.Error())
-		resp.Error = err.Error()
-		return resp
-	}
-
-	// var eachNodeColNames [][]string
-	var filename string
-
-	// plan-tree
-	if sql_type == meta.SelectStmtType && plan_tree != nil {
-		fmt.Println(plan_tree)
-		txn.Init(100)
-		filename, err = mysql.Exec(&ctx, txn, plan_tree)
+	var plan_tree_ *plan.PlanTreeNode
+	if utils.ContainString(sql, "SHOW", true) && utils.ContainString(sql, "PARTITIONS", true) {
+		result_str_, err := etcd.ShowPartitions()
 		if err != nil {
+			l.Errorln(err.Error())
 			resp.Error = err.Error()
+			return resp
 		}
+		resp.ResponseStr = result_str_
 	} else {
-		txn.Init(len(sqls))
+		sql_type, plan_tree, sqls, err := plan.ParseAndExecute(ctx, sql)
+		if err != nil {
+			l.Errorln(err.Error())
+			resp.Error = err.Error()
+			return resp
+		}
+		plan_tree_ = plan_tree
+		// var eachNodeColNames [][]string
+		var filename string
 
-		for i, s := range sqls {
-			var m *meta.Message
-			if len(s.File_path) != 0 {
-				m = meta.NewDataLoadRequestMessage(ctx.IP, ctx.Port, s.Site_ip, s.Site_port, txn.TxnId)
-				m.SetFilepath(s.File_path)
-			} else {
-				m = meta.NewQueryRequestMessage(ctx.IP, ctx.Port, s.Site_ip, s.Site_port, txn.TxnId)
+		// plan-tree
+		if sql_type == meta.SelectStmtType && plan_tree != nil {
+			fmt.Println(plan_tree)
+			txn.Init(100)
+			filename, err = mysql.Exec(&ctx, txn, plan_tree)
+			if err != nil {
+				resp.Error = err.Error()
 			}
-			m.SetQueryId(i)
-			m.SetQuery(s.Sql)
-			id := FindDestMachineId(c.Peers[:], *m)
-			if id == -1 {
-				l.Error("can not send to ip:", s.Site_ip)
-				resp.Error = "invaild remote ip"
-				break
-			} else if id == int(c.Id) {
-				exec_ctx := mysql.CreateExecuteContext(i, s.Sql, s.File_path, c.Context.DB, c.Context.Logger, txn)
-				go mysql.LocalExecSql(exec_ctx, sql_type)
-			} else {
-				l.Infoln(m.Query, m.Src, m.Dst)
-				c.DispatchMessages[id].PushBack(*m)
+
+		} else {
+			txn.Init(len(sqls))
+
+			for i, s := range sqls {
+				var m *meta.Message
+				if len(s.File_path) != 0 {
+					m = meta.NewDataLoadRequestMessage(ctx.IP, ctx.Port, s.Site_ip, s.Site_port, txn.TxnId)
+					m.SetFilepath(s.File_path)
+				} else {
+					m = meta.NewQueryRequestMessage(ctx.IP, ctx.Port, s.Site_ip, s.Site_port, txn.TxnId)
+				}
+				m.SetQueryId(i)
+				m.SetQuery(s.Sql)
+				id := FindDestMachineId(c.Peers[:], *m)
+				if id == -1 {
+					l.Error("can not send to ip:", s.Site_ip)
+					resp.Error = "invaild remote ip"
+					break
+				} else if id == int(c.Id) {
+					exec_ctx := mysql.CreateExecuteContext(i, s.Sql, s.File_path, c.Context.DB, c.Context.Logger, txn)
+					if sql_type == meta.UseDatabaseStmtType {
+						mysql.SQLDriverRefresh(c.Context, "ddb")
+					}
+					go mysql.LocalExecSql(exec_ctx, sql_type)
+				} else {
+					l.Infoln(m.Query, m.Src, m.Dst)
+					c.DispatchMessages[id].PushBack(*m)
+				}
+				txn.Participants[i] = s.Site_ip
+				// txn.Results[i] = nil
+				// txn.Rows[i] = nil
+				txn.Responses[i] = false
 			}
-			txn.Participants[i] = s.Site_ip
-			// txn.Results[i] = nil
-			// txn.Rows[i] = nil
-			txn.Responses[i] = false
+
+			// wait
+			for i := 0; i < len(sqls); i++ {
+				l.Infoln("wait for response for subquery id(", sqls[i].Sql, "), expect response from", sqls[i].Site_ip)
+				for !txn.Responses[i] {
+					time.Sleep(time.Duration(10) * time.Nanosecond)
+				}
+			}
+
+			for i := 0; i < len(sqls); i++ {
+				if txn.Error != nil {
+					resp.Error = txn.Error.Error()
+					// assign resp.ExecTime
+				}
+			}
 		}
 
-		// wait
-		for i := 0; i < len(sqls); i++ {
-			l.Infoln("wait for response for subquery id(", sqls[i].Sql, "), expect response from", sqls[i].Site_ip)
-			for !txn.Responses[i] {
-				time.Sleep(time.Duration(10) * time.Nanosecond)
-			}
-		}
-
-		for i := 0; i < len(sqls); i++ {
-			if txn.Error != nil {
-				resp.Error = txn.Error.Error()
-				// assign resp.ExecTime
-			}
+		if sql_type == meta.SelectStmtType && plan_tree != nil {
+			// select: set file path
+			resp.Filename = filename
 		}
 	}
 
-	if sql_type == meta.SelectStmtType && plan_tree != nil {
-		// select: set file path
-		resp.Filename = filename
+	resp.ExecTime = time.Since(txn.StartTimestamp)
+	if plan_tree_ != nil {
+		plan.PrintPlanTreePlot(plan_tree_)
 	}
 
 	delete(c.ActiveTransactions, txn.TxnId)

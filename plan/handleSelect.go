@@ -102,7 +102,7 @@ func buildSelection(ctx meta.Context, where ast.ExprNode) (*PlanTreeNode, error)
 		if !ok {
 			return selection, errors.New("fail to type cast into BinaryOperationExpr")
 		}
-		selection.ConditionsStr = append(selection.ConditionsStr, TransExprNode2Str(expr, true))
+		selection.ConditionsStr = append(selection.ConditionsStr, TransExprNode2Str(expr, true, true))
 	}
 	// selection.SetChildren(p)
 	return selection, nil
@@ -271,17 +271,27 @@ func HandleSelect(ctx meta.Context, sel *ast.SelectStmt) (p *PlanTreeNode, err e
 		return p, err
 	}
 
-	cur_index := 0
-	SetNodeId(ctx, new_joined_tree, &cur_index)
-
-	OptimizeTransmission(ctx, new_joined_tree)
-
 	// todo test
 	if new_joined_tree != nil && new_joined_tree.GetChildrenNum() != 0 {
 		new_joined_tree = new_joined_tree.GetChild(0)
 	}
-	//
-	return new_joined_tree, err
+	// top projection
+	proj.RemoveAllChild()
+	proj.AddChild(new_joined_tree)
+	proj.Type = UnionType
+
+	for idx_ := range proj.ColsName {
+		proj.ColsName[idx_] = strings.Replace(proj.ColsName[idx_], ".", "$", -1)
+	}
+
+	cur_index := 0
+	SetNodeId(ctx, proj, &cur_index)
+
+	OptimizeTransmission(ctx, proj)
+
+	// PrintPlanTreePlot(proj)
+
+	return proj, err
 }
 
 func SetNodeId(ctx meta.Context, from *PlanTreeNode, cur_index *int) error {

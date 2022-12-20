@@ -1,6 +1,9 @@
 package meta
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 type TransactionType uint32
 
@@ -22,8 +25,8 @@ type Transaction struct {
 	EffectRows      []int
 	Responses       []bool
 	Error           error
-
-	b_mutex sync.Mutex
+	StartTimestamp  time.Time
+	b_mutex         sync.Mutex
 }
 
 func (t *Transaction) Init(len int) {
@@ -49,6 +52,9 @@ const (
 	InsertStmtType
 	CreateTableStmtType
 	DropTableStmtType
+	CreateDatabaseStmtType
+	UseDatabaseStmtType
+	DropDatabaseStmtType
 	LoadDataStmtType
 	SelectIntoFileStmtType
 	StmtTypeNum

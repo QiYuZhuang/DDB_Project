@@ -70,7 +70,7 @@ func ClientConnectionHandler(c *Coordinator, peer_idx int) {
 	}
 	defer conn.Close()
 	c.DispatcherSockets[peer_idx] = conn
-	l.Debug(address, ", client connect")
+	l.Infoln("Connection established: ", address, ", client connect")
 
 	for {
 		c.d_mutex.Lock()
