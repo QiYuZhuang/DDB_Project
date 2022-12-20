@@ -283,26 +283,32 @@ func TestParseDebugLocal(t *testing.T) {
 		// "insert into customer values(20000, 'hello world', 2);",
 		// "drop table customer;",
 
-		// test
-		"create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
-		"create table customer (ID int, NAME varchar(255), RANK_ int);",
-		"create table orders (customer_id int, book_id int, quantity int);",
-		"create table book (id int , title char(100), authors char(200), publisher_id int, copies int);",
+		// // test
+		// "create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
+		// "create table customer (ID int, NAME varchar(255), RANK_ int);",
+		// "create table orders (customer_id int, book_id int, quantity int);",
+		// "create table book (id int , title char(100), authors char(200), publisher_id int, copies int);",
 
-		"insert into customer(id, name, rank_) values(300001, 'Xiaoming', 1);",
-		"insert into publisher(id, name, nation) values(104001,'High Education Press', 'PRC');",
+		// "insert into customer(id, name, rank_) values(300001, 'Xiaoming', 1);",
+		// "insert into publisher(id, name, nation) values(104001,'High Education Press', 'PRC');",
 
-		// test
-		`create partition on |PUBLISHER| [horizontal] at (10.77.110.145:10800, 10.77.110.146:10800, 10.77.110.146:10880, 10.77.110.148:10800) where { "PUBLISHER_1" : ID < 104000 and NATION = 'PRC'; "PUBLISHER_2" : ID < 104000 and NATION = 'USA'; "PUBLISHER_3" : ID >= 104000 and NATION = 'PRC'; "PUBLISHER_4" : ID >= 104000 and NATION = 'USA' };`,
-		`create partition on |CUSTOMER| [vertical] at (10.77.110.145:10800, 10.77.110.146:10800) where { "CUSTOMER_1" : ID, NAME; "CUSTOMER_2" : ID, rank_};`,
+		// "delete from publisher;",
+		// "delete from customer;",
 
-		`create partition on |ORDERS| [horizontal] at (10.77.110.145:10800, 10.77.110.146:10800, 10.77.110.146:10880, 10.77.110.148:10800) where { "ORDERS_1" : CUSTOMER_ID < 307000 and BOOK_ID < 215000; "ORDERS_2" : CUSTOMER_ID < 307000 and BOOK_ID >= 215000; "ORDERS_3" : CUSTOMER_ID >= 307000 and BOOK_ID < 215000; "ORDERS_4" : CUSTOMER_ID >= 307000 and BOOK_ID >= 215000 };`,
-		`create partition on |BOOK| [horizontal] at (10.77.110.145:10800, 10.77.110.146:10800, 10.77.110.146:10880) where { "BOOK_1" : ID < 205000; "BOOK_2" : ID >= 205000 and ID < 210000 ; "BOOK_3" : ID >= 210000 };`,
+		// `show partitions;`,
+		// `delete partition |customer|;`,
 
-		"LOAD DATA INFILE '/tmp/data/publisher.csv' INTO TABLE publisher FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (ID, NAME, NATION);",
-		"LOAD DATA INFILE '/tmp/data/customer.csv' INTO TABLE customer FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (ID, NAME, RANK_);",
-		"LOAD DATA INFILE '/tmp/data/order.csv' INTO TABLE orders FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (customer_id, book_id, quantity);",
-		"LOAD DATA INFILE '/tmp/data/book.csv' INTO TABLE book FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (id, title, authors, publisher_id, copies);",
+		// // test
+		// `create partition on |PUBLISHER| [horizontal] at (10.77.110.145:10800, 10.77.110.146:10800, 10.77.110.146:10880, 10.77.110.148:10800) where { "PUBLISHER_1" : ID < 104000 and NATION = 'PRC'; "PUBLISHER_2" : ID < 104000 and NATION = 'USA'; "PUBLISHER_3" : ID >= 104000 and NATION = 'PRC'; "PUBLISHER_4" : ID >= 104000 and NATION = 'USA' };`,
+		// `create partition on |CUSTOMER| [vertical] at (10.77.110.145:10800, 10.77.110.146:10800) where { "CUSTOMER_1" : ID, NAME; "CUSTOMER_2" : ID, rank_};`,
+
+		// `create partition on |ORDERS| [horizontal] at (10.77.110.145:10800, 10.77.110.146:10800, 10.77.110.146:10880, 10.77.110.148:10800) where { "ORDERS_1" : CUSTOMER_ID < 307000 and BOOK_ID < 215000; "ORDERS_2" : CUSTOMER_ID < 307000 and BOOK_ID >= 215000; "ORDERS_3" : CUSTOMER_ID >= 307000 and BOOK_ID < 215000; "ORDERS_4" : CUSTOMER_ID >= 307000 and BOOK_ID >= 215000 };`,
+		// `create partition on |BOOK| [horizontal] at (10.77.110.145:10800, 10.77.110.146:10800, 10.77.110.146:10880) where { "BOOK_1" : ID < 205000; "BOOK_2" : ID >= 205000 and ID < 210000 ; "BOOK_3" : ID >= 210000 };`,
+
+		// "LOAD DATA INFILE '/tmp/data/publisher.csv' INTO TABLE publisher FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (ID, NAME, NATION);",
+		// "LOAD DATA INFILE '/tmp/data/customer.csv' INTO TABLE customer FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (ID, NAME, RANK_);",
+		// "LOAD DATA INFILE '/tmp/data/order.csv' INTO TABLE orders FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (customer_id, book_id, quantity);",
+		// "LOAD DATA INFILE '/tmp/data/book.csv' INTO TABLE book FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (id, title, authors, publisher_id, copies);",
 
 		// "create table publisher (ID int, NAME varchar(255), NATION varchar(255));",
 		// `create partition on |CUSTOMER| [vertical]
@@ -342,28 +348,28 @@ func TestParseDebugLocal(t *testing.T) {
 		// `select Publisher.name from Publisher`,
 
 		// 3
-		// `select Book.title from Book where copies>5000`,
+		// `select Book.title from Book where copies>5000`, // rows 24906
 
 		// 4
-		// `select customer_id, quantity from Orders where quantity < 8`,
+		// `select customer_id, quantity from Orders where quantity < 8`, // rows 99346
 
-		// 5
+		// 5 rows 21923
 		// `select Book.title,Book.copies,  Publisher.name,Publisher.nation from Book,Publisher where Book.publisher_id=Publisher.id and Publisher.nation='USA' and Book.copies > 1000`,
 
-		// 6
+		// 6 rows 100000
 		// `select customer.name,orders.quantity from customer,orders where customer.id=orders.customer_id`,
 
-		// 7
+		// 7 rows 41098
 		// `select Customer.name,Customer.rank_, Orders.quantity from Customer,Orders where Customer.id=Orders.customer_id and Customer.rank_=1`, // not best
 
-		// 8
-		// `select Customer.name ,Orders.quantity, Book.title from Customer,Orders,Book where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Customer.rank_=1 and Book.copies>5000`, // not best wrong
+		// 8 rows 20612
+		`select Customer.name ,Orders.quantity, Book.title from Customer,Orders,Book where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Customer.rank_=1 and Book.copies>5000`, // not best wrong
 
-		// 9
+		// 9 rows 20209
 		// ` select Customer.name, Book.title, Publisher.name, Orders.quantity from Customer, Book, Publisher, Orders where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Book.publisher_id=Publisher.id and Book.id>220000 and Publisher.nation='USA' and Orders.quantity>1`, // not best
 
-		// 10
-		`select Customer.name, Book.title,Publisher.name, Orders.quantity from Customer, Book, Publisher, Orders where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Book.publisher_id=Publisher.id and Customer.id>308000 and Book.copies>100 and Orders.quantity>1 and Publisher.nation='PRC';`,
+		// 10 rows 16345
+		// `select Customer.name, Book.title,Publisher.name, Orders.quantity from Customer, Book, Publisher, Orders where Customer.id=Orders.customer_id and Book.id=Orders.book_id and Book.publisher_id=Publisher.id and Customer.id>308000 and Book.copies>100 and Orders.quantity>1 and Publisher.nation='PRC';`,
 	}
 
 	for _, sql_str := range sql_strs {

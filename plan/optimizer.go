@@ -114,7 +114,7 @@ func GetFilterCondition(frags_ meta.Partition, frag_name string) ([]string, []st
 	return condition_str_, col_str_, nil
 }
 
-func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
+func SplitFragTable_(ctx meta.Context, p *PlanTreeNode, parent *PlanTreeNode, p_idx int) error {
 	//
 	var frags_ meta.Partition
 	var err error
@@ -174,15 +174,14 @@ func SplitFragTable_(ctx meta.Context, p *PlanTreeNode) error {
 	return nil
 }
 
-func SplitFragTable(ctx meta.Context, p *PlanTreeNode) {
-	nums := p.GetChildrenNum()
-	for i := 0; i < nums; i++ {
+func SplitFragTable(ctx meta.Context, p *PlanTreeNode, parent *PlanTreeNode, p_idx int) {
+	for i := 0; i < p.GetChildrenNum(); i++ {
 		child_ := p.GetChild(i)
 		if child_.Type == DataSourceType {
 			//
-			SplitFragTable_(ctx, child_)
+			SplitFragTable_(ctx, child_, p, i)
 		} else {
-			SplitFragTable(ctx, child_)
+			SplitFragTable(ctx, child_, p, i)
 		}
 	}
 }
@@ -858,8 +857,7 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 
 	var new_joined_node *PlanTreeNode
 	var err error
-
-	PrintPlanTreePlot(from)
+	// PrintPlanTreePlot(from)
 
 	// join sequence: A = B
 	// where condition first
@@ -901,7 +899,7 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 		// var r_whole_frag_join_ *PlanTreeNode
 		// start to join one by one
 		for i := 0; i < l_table_node.GetChildrenNum(); i++ {
-			cur_l_frag := *l_table_node.GetChild(i)
+			cur_l_frag := *l_table_node.GetChild(i).DeepCopy()
 			if cur_l_frag.IsPruned {
 				continue
 			}
@@ -909,7 +907,7 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 			s_ := mapset.NewSet()
 			is_union_able := true
 			for j := 0; j < r_table_node.GetChildrenNum(); j++ {
-				cur_r_frag := *r_table_node.GetChild(j)
+				cur_r_frag := *r_table_node.GetChild(j).DeepCopy()
 				//!!! remove UnPrunedNodeName!!!
 				res := FindJoinNode(l_table, cur_r_frag.FromTableName, UnPrunedNodeName)
 				s_.Add(res)
@@ -937,7 +935,7 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 
 			// iterate right frags
 			for j := 0; j < r_table_node.GetChildrenNum(); j++ {
-				cur_r_frag := *r_table_node.GetChild(j)
+				cur_r_frag := *r_table_node.GetChild(j).DeepCopy()
 				if cur_r_frag.IsPruned {
 					continue
 				}
@@ -1044,7 +1042,7 @@ func JoinUsingPruning(ctx meta.Context, from *PlanTreeNode, where *PlanTreeNode,
 			from.AddChild(new_union)
 		}
 		// test
-		PrintPlanTreePlot(from)
+		// PrintPlanTreePlot(from)
 	}
 
 	new_joined_node = from
@@ -1179,6 +1177,88 @@ func filterColumns(partition_info PartitionInfo, from *PlanTreeNode) []string {
 	return colsName
 }
 
+func AddVerticeJoinNode(ctx meta.Context, p *PlanTreeNode, p_idx int, parent *PlanTreeNode) error {
+	var err error
+	if p.GetChildrenNum() == 0 {
+		return err
+	} else {
+		if p.Type == JoinType && len(p.FromTableName) > 0 {
+			// has
+			unpruned_child_num := 0
+			for i := 0; i < p.GetChildrenNum(); i++ {
+				if !p.GetChild(i).IsPruned {
+					unpruned_child_num++
+				}
+			}
+
+			if unpruned_child_num <= 1 {
+				return err
+			}
+
+			// Join Node
+			p_new := PlanTreeNode{
+				Type:            p.Type,
+				FromTableName:   p.FromTableName,
+				ExecuteSiteIP:   p.ExecuteSiteIP,
+				ExecuteSitePort: p.ExecuteSitePort,
+				DestSiteIP:      p.DestSiteIP,
+				DestSitePort:    p.DestSitePort,
+				Conditions:      p.Conditions,
+				ConditionsStr:   p.ConditionsStr,
+				ColsName:        p.ColsName,
+			}.Init()
+
+			// p.Conditions = nil
+			// p.ConditionsStr = nil
+			// p.ColsName = nil
+
+			p_new.AddChild(p)
+			if parent != nil {
+				parent.ResetChild(p_idx, p_new)
+			}
+
+		}
+		for i := 0; i < p.GetChildrenNum(); i++ {
+			err := AddVerticeJoinNode(ctx, p.GetChild(i), i, p)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
+}
+
+func CutUselessJoinNode(ctx meta.Context, from *PlanTreeNode, node_index_ int, parent *PlanTreeNode) error {
+	var err error
+	if from.GetChildrenNum() == 0 {
+		return err
+	} else {
+		if from.Type == JoinType {
+			unpruned_child_num := 0
+			last_unpruned_idx := 0
+			for i := 0; i < from.GetChildrenNum(); i++ {
+				if !from.GetChild(i).IsPruned {
+					unpruned_child_num++
+				} else {
+					last_unpruned_idx = i
+				}
+			}
+			if (unpruned_child_num == 1 || from.GetChildrenNum() == 1) && parent != nil {
+
+				*parent.GetChild(node_index_) = *from.GetChild(last_unpruned_idx)
+				from = from.GetChild(last_unpruned_idx)
+			}
+		}
+		for i := 0; i < from.GetChildrenNum(); i++ {
+			err := CutUselessJoinNode(ctx, from.GetChild(i), i, from)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
+}
+
 func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_index_ int, parent *PlanTreeNode) error {
 	var err error
 	if from.GetChildrenNum() == 0 {
@@ -1200,7 +1280,6 @@ func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_in
 		if err != nil {
 			return err
 		}
-
 		if len(from.ConditionsStr) > 0 {
 			from.Conditions, from.ConditionsStr = filterCondition(partition_info, from)
 			// if err != nil {
@@ -1239,11 +1318,15 @@ func AddProjectionAndSelectionNode(ctx meta.Context, from *PlanTreeNode, node_in
 		if parent == nil && parent.GetChildrenNum() < node_index_ {
 			return errors.New("unkown error")
 		}
+		// if parent.Type == ProjectionType || parent.Type == SelectType {
+		// 	// pass
+		// } else {
 		if select_node != nil {
 			parent.ResetChild(node_index_, select_node)
 		} else if proj_node != nil {
 			parent.ResetChild(node_index_, proj_node)
 		}
+		// }
 	} else {
 		for i := 0; i < from.GetChildrenNum(); i++ {
 			err := AddProjectionAndSelectionNode(ctx, from.GetChild(i), i, from)

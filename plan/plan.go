@@ -117,6 +117,30 @@ func (p *PlanTreeNode) RemoveAllChild() {
 	}
 }
 
+func (p *PlanTreeNode) DeepCopy() *PlanTreeNode {
+	p_new := PlanTreeNode{}.Init()
+
+	p_new.NodeId = p.NodeId
+	p_new.Type = p.Type
+	p_new.Status = p.Status
+	p_new.DestCoordintorId = p.DestCoordintorId
+	p_new.FromTableName = p.FromTableName
+	p_new.Conditions = p.Conditions
+	p_new.ConditionsStr = p.ConditionsStr
+	p_new.ColsName = p.ColsName
+	p_new.IsPruned = p.IsPruned
+	p_new.ExecuteSiteIP = p.ExecuteSiteIP
+	p_new.ExecuteSitePort = p.ExecuteSitePort
+	p_new.DestSiteIP = p.DestSiteIP
+	p_new.DestSitePort = p.DestSitePort
+
+	len := p.GetChildrenNum()
+	for i := 0; i < len; i++ {
+		p_new.AddChild(p.GetChild(i).DeepCopy())
+	}
+	return p_new
+}
+
 /************************************************************/
 
 type InsertRequest struct {

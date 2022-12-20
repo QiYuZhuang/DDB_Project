@@ -246,7 +246,7 @@ func HandleSelect(ctx meta.Context, sel *ast.SelectStmt) (p *PlanTreeNode, err e
 	fmt.Println(PrintPlanTree(where))
 	fmt.Println(PrintPlanTree(proj))
 
-	SplitFragTable(ctx, from)
+	SplitFragTable(ctx, from, nil, 0)
 
 	fmt.Println(PrintPlanTree(from))
 
@@ -257,6 +257,12 @@ func HandleSelect(ctx meta.Context, sel *ast.SelectStmt) (p *PlanTreeNode, err e
 	if err != nil {
 		return p, err
 	}
+
+	err = AddVerticeJoinNode(ctx, from, 0, nil)
+	if err != nil {
+		return p, err
+	}
+
 	fmt.Println("PrunedNodeName: ", PrunedNodeName)
 	fmt.Println("==================")
 	fmt.Println("UnPrunedNodeName: ", UnPrunedNodeName)
@@ -270,6 +276,8 @@ func HandleSelect(ctx meta.Context, sel *ast.SelectStmt) (p *PlanTreeNode, err e
 	if err != nil {
 		return p, err
 	}
+
+	err = CutUselessJoinNode(ctx, new_joined_tree, 0, nil)
 
 	// todo test
 	if new_joined_tree != nil && new_joined_tree.GetChildrenNum() != 0 {
