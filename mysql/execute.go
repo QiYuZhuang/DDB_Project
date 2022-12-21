@@ -354,10 +354,18 @@ func handleJoinOperation(ctx *meta.Context, txn *meta.Transaction, node *plan.Pl
 	tmp_filepath_2 := "/home/" + u.Username + "/" + tmp_filename
 
 	join_sql = utils.GenerateSelectIntoFileSql(join_sql, tmp_filepath_1, "|", "")
-	if _, err := ctx.DB.Exec(join_sql); err != nil {
+
+	res, err := ctx.DB.Exec(join_sql)
+	if err != nil {
 		dropTmpJoinTables(table_names, ctx.DB)
 		return ret, err
 	}
+	row_cnt, err := res.RowsAffected()
+	if err != nil {
+		dropTmpJoinTables(table_names, ctx.DB)
+		return ret, err
+	}
+	node.Status = int(row_cnt)
 
 	if err := utils.Chown(u.Username, tmp_filepath_1, false); err != nil {
 		dropTmpJoinTables(table_names, ctx.DB)
